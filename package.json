@@ -2,6 +2,7 @@
   "name": "masidy-store",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@12.14.0",
   "scripts": {
     "dev": "vite dev --port 3001",
     "build": "vite build",
