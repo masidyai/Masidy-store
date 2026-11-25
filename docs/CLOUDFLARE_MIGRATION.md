@@ -34,7 +34,7 @@ Configure all six values below as Worker secrets on the production Worker, not a
 
 `PRINTFUL_STORE_ID` is optional and is a non-secret Worker variable; set it in `cloudflare.config.ts` only when using a Printful account token that needs an explicit store selection.
 
-`PUBLIC_SITE_URL` is a non-secret binding: production defaults to `https://www.masidy.store`; the local staging mode defaults to `http://localhost:3001`. Update the staging value before deploying a preview to a public hostname. `USE_PAYMENT_LINKS` defaults to `false`.
+`PUBLIC_SITE_URL`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, and `USE_PAYMENT_LINKS` are non-secret Worker variables. The public site URL defaults to `https://www.masidy.store`; the local staging value defaults to `http://localhost:3001`. Update the staging value before deploying a preview to a public hostname. The Stripe publishable key is not a secret key.
 
 To promote the intended existing account, set `ADMIN_SETUP_TOKEN` in the Worker, sign in as that account, then send `POST /api/admin/make-admin` with `Authorization: Bearer <ADMIN_SETUP_TOKEN>`. The endpoint only promotes an account while no admin exists. After successful setup, rotate the token to a fresh random value; keep the secret binding provisioned for future deployments.
 

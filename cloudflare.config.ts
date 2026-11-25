@@ -39,12 +39,16 @@ export default defineConfig(({ isPreview, mode }) => {
         VINEXT_KV_CACHE: bindings.kv({
           id: "9a4a24c8eb7144c88cdc89c7ef8c8924",
         }),
+        NEXT_PUBLIC_SITE_URL: bindings.text("https://www.masidy.store/"),
+        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: bindings.text(
+          "pk_live_51Tbx6eD31DwzbfMdU3XmOPRAI30Nvz0quy10NHSvZC1bAsFwwhOwmT5OkeP8rEqjPAfUarGJLVpzwyc4E0Md94Id00fojt4kTZ",
+        ),
         PUBLIC_SITE_URL: bindings.text(
           isStaging ? "http://localhost:3001" : "https://www.masidy.store",
         ),
         USE_PAYMENT_LINKS: bindings.text(String(false)),
         PRINTFUL_API_TOKEN: bindings.secret(),
-        PRINTFUL_STORE_ID: bindings.text(""),
+        PRINTFUL_STORE_ID: bindings.text("18134960"),
         STRIPE_LIVE_SECRET_KEY: bindings.secret(),
         STRIPE_SECRET_KEY: bindings.secret(),
         STRIPE_WEBHOOK_SECRET: bindings.secret(),
