@@ -5,7 +5,7 @@ export default defineConfig(({ isPreview, mode }) => {
 
   return {
     worker: defineWorker({
-      name: isStaging ? "masidy-store-preview" : "masidy-store",
+      name: isStaging ? "masidy-store-preview" : "masidy-store1",
       entrypoint: "vinext/server/fetch-handler",
       compatibilityDate: "2026-11-25",
       compatibilityFlags: ["nodejs_compat"],

@@ -17,13 +17,13 @@ For local integrations, create a git-ignored `.dev.vars` file with the runtime s
 
 Production uses a separate EU D1 database, `masidy-store-production`, and does not point at the existing staging database. The production database and `VINEXT_KV_CACHE` namespace are provisioned, their identifiers are recorded in `cloudflare.config.ts`, and the initial schema is applied.
 
-The production Worker has been deployed, but Cloudflare reported no targets deployed: `workers.dev`, preview URLs, and custom-domain routing are disabled. The initial deployment used nonfunctional placeholder values for required Worker secrets. Replace every placeholder in the Cloudflare dashboard before attaching any route or domain.
+The production Worker is `masidy-store1`; both `masidy.store` and `www.masidy.store` route to it. The Git deployment must target this same Worker. Until a successful Git-triggered deployment publishes the storefront, the Worker may continue to serve its dashboard-created `Hello World` response. `workers.dev` and preview URLs remain disabled.
 
 Apply migrations only after reviewing the target and backing up any existing data. The old `/api/migrate` endpoint no longer changes schemas; migrations are managed with the D1 CLI.
 
 ## Runtime configuration
 
-Configure these values as Worker secrets in Cloudflare and in `.dev.vars` when testing locally. The initial production deployment currently contains placeholders; replace them with working values before enabling traffic:
+Configure all six values below as Worker secrets on the production Worker, not as plain-text variables. Confirm they are present on `masidy-store1` before retrying the Git deployment. For local testing, use `.dev.vars`:
 
 - `PRINTFUL_API_TOKEN`
 - `STRIPE_LIVE_SECRET_KEY`
@@ -42,4 +42,4 @@ To promote the intended existing account, set `ADMIN_SETUP_TOKEN` in the Worker,
 
 An initial read-only snapshot was copied from PostgreSQL into EU D1: 2 users, 2 sessions, 0 password-reset tokens, 3 orders, and 0 email logs. Password hashes and session tokens were preserved; order JSON and timestamps were converted for SQLite. The source PostgreSQL database was not changed. The D1 copy passed row-count, order-JSON, and foreign-key checks. Because the old store may still receive changes, take and verify one final data sync immediately before cutover.
 
-The existing domain and source database remain unchanged. After Worker secrets are configured, test login, admin setup, Printful catalog loading, Stripe checkout/webhooks, and email delivery. Only then route the production domain to the Worker.
+The source database remains unchanged, and the production domain already routes to `masidy-store1`. After deployment and secret configuration, test login, admin setup, Printful catalog loading, Stripe checkout/webhooks, and email delivery before considering the production cutover complete.
