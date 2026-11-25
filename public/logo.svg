@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200">
+  <rect width="800" height="200" fill="#fff"/>
+  <g transform="scale(.4)">
+    <path d="M66 438V74a15 15 0 0 1 27-9l163 220L419 65a15 15 0 0 1 27 9v364l-72-111m-148 0L82 438" fill="none" stroke="#1c1c1c" stroke-width="42" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M143 74h226L256 230z" fill="#fc2f02"/>
+  </g>
+  <text x="220" y="115" fill="#1c1c1c" font-family="Arial, Helvetica, sans-serif" font-size="82" font-weight="600" letter-spacing="3">MASIDY</text>
+  <path d="M220 159h105m250 0h105" stroke="#fc2f02" stroke-width="16" stroke-linecap="round"/>
+  <text x="388" y="174" fill="#1c1c1c" font-family="Arial, Helvetica, sans-serif" font-size="28" letter-spacing="14" text-anchor="middle">STORE</text>
+</svg>
