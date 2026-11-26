@@ -79,6 +79,20 @@ export async function setOrderStripeSessionId(orderId: string, stripeSessionId: 
   `
 }
 
+export async function setOrderPrintfulOrderId(orderId: string, printfulOrderId: string) {
+  const result = await sql<{ printful_order_id: string | null }>`
+    UPDATE orders
+    SET printful_order_id = COALESCE(printful_order_id, ${printfulOrderId}),
+        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    WHERE id = ${orderId}
+    RETURNING printful_order_id
+  `
+  const savedId = result.rows[0]?.printful_order_id
+  if (!savedId || savedId !== printfulOrderId) {
+    throw new Error('Could not link the fulfillment order to the paid order.')
+  }
+}
+
 export async function getOrdersByUserId(userId: string) {
   const result = await sql<OrderRow>`
     SELECT * FROM orders WHERE user_id = ${userId} ORDER BY created_at DESC

@@ -4,6 +4,8 @@ import { env } from 'cloudflare:workers'
 import { sql } from '@/lib/db/client'
 import { verifyStripeSignature } from '@/lib/stripe/webhook-signature'
 import { recordStripeTaxTransaction } from '@/lib/checkout/stripe-tax'
+import { getOrderById, setOrderPrintfulOrderId } from '@/lib/db/orders'
+import { submitPaidOrder } from '@/lib/printful/orders'
 
 export async function POST(request: Request) {
   if (!env.STRIPE_WEBHOOK_SECRET) {
@@ -105,6 +107,28 @@ async function handlePaymentIntentSucceeded(paymentIntent: any) {
     if (result.rows[0]) {
       console.log('[Webhook] Order confirmed:', result.rows[0].id)
       await sendConfirmationEmail(result.rows[0].id)
+    }
+
+    if (paymentIntent.metadata?.checkout_flow === 'printful_cost_plus') {
+      const shippingMethod = paymentIntent.metadata.shipping_rate_id
+      const token = env.PRINTFUL_API_TOKEN
+      if (typeof shippingMethod !== 'string' || !token) {
+        throw new Error('Paid order is missing fulfillment configuration.')
+      }
+
+      const order = await getOrderById(orderId)
+      if (!order || order.stripeSessionId !== paymentIntent.id) {
+        throw new Error('Paid order could not be matched to its payment.')
+      }
+
+      const printfulOrderId = await submitPaidOrder(
+        order,
+        shippingMethod,
+        token,
+        env.PRINTFUL_STORE_ID,
+      )
+      await setOrderPrintfulOrderId(orderId, printfulOrderId)
+      console.log('[Webhook] Fulfillment order submitted:', orderId, printfulOrderId)
     }
 
     if (paymentIntent.metadata?.checkout_flow === 'payment_element') {
