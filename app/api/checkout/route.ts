@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: 'Your cart is empty.' }, { status: 400 })
   }
 
-  const secretKey = env.STRIPE_LIVE_SECRET_KEY || env.STRIPE_SECRET_KEY
+  const secretKey = env.STRIPE_SECRET_KEY
   const usePaymentLinks = (await env.USE_PAYMENT_LINKS) === 'true' || usePaymentLink
   
   if (!secretKey) {

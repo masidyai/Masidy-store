@@ -23,11 +23,10 @@ Apply migrations only after reviewing the target and backing up any existing dat
 
 ## Runtime configuration
 
-Configure all six values below as Worker secrets on the production Worker, not as plain-text variables. Confirm they are present on `masidy-store1` before retrying the Git deployment. For local testing, use `.dev.vars`:
+Configure all five values below as Worker secrets on the production Worker, not as plain-text variables. Confirm they are present on `masidy-store1` before retrying the Git deployment. For local testing, use `.dev.vars`:
 
 - `PRINTFUL_API_TOKEN`
-- `STRIPE_LIVE_SECRET_KEY`
-- `STRIPE_SECRET_KEY` (checkout falls back to this when the live key is unset)
+- `STRIPE_SECRET_KEY` (use the live key for production payments)
 - `STRIPE_WEBHOOK_SECRET`
 - `RESEND_API_KEY`
 - `ADMIN_SETUP_TOKEN` (one-time initial admin setup; rotate it after promoting the intended account)
@@ -37,6 +36,8 @@ Configure all six values below as Worker secrets on the production Worker, not a
 `PUBLIC_SITE_URL`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, and `USE_PAYMENT_LINKS` are non-secret Worker variables. The public site URL defaults to `https://www.masidy.store`; the local staging value defaults to `http://localhost:3001`. Update the staging value before deploying a preview to a public hostname. The Stripe publishable key is not a secret key.
 
 To promote the intended existing account, set `ADMIN_SETUP_TOKEN` in the Worker, sign in as that account, then send `POST /api/admin/make-admin` with `Authorization: Bearer <ADMIN_SETUP_TOKEN>`. The endpoint only promotes an account while no admin exists. After successful setup, rotate the token to a fresh random value; keep the secret binding provisioned for future deployments.
+
+Configure Stripe's production webhook endpoint as `https://www.masidy.store/api/webhooks/stripe`; store its signing secret in `STRIPE_WEBHOOK_SECRET`. The endpoint verifies Stripe's timestamped HMAC signature before processing events.
 
 ## Data cutover
 

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { headers } from 'next/headers'
 import { env } from 'cloudflare:workers'
 import { sql } from '@/lib/db/client'
+import { verifyStripeSignature } from '@/lib/stripe/webhook-signature'
 
 export async function POST(request: Request) {
   if (!env.STRIPE_WEBHOOK_SECRET) {
@@ -64,18 +65,6 @@ export async function POST(request: Request) {
     console.error('[Webhook] Error processing event:', error)
     return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 })
   }
-}
-
-async function verifyStripeSignature(body: string, signature: string, secret: string) {
-  // Simple HMAC verification (in production, use stripe library)
-  // For now, we'll parse the event directly for testing
-  // In production: const event = stripe.webhooks.constructEvent(body, signature, secret)
-  
-  const event = JSON.parse(body)
-  
-  // TODO: Add proper signature verification in production
-  // This is a simplified version for development
-  return event
 }
 
 async function handleCheckoutCompleted(session: any) {

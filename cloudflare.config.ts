@@ -49,7 +49,6 @@ export default defineConfig(({ isPreview, mode }) => {
         USE_PAYMENT_LINKS: bindings.text(String(false)),
         PRINTFUL_API_TOKEN: bindings.secret(),
         PRINTFUL_STORE_ID: bindings.text("18134960"),
-        STRIPE_LIVE_SECRET_KEY: bindings.secret(),
         STRIPE_SECRET_KEY: bindings.secret(),
         STRIPE_WEBHOOK_SECRET: bindings.secret(),
         RESEND_API_KEY: bindings.secret(),
