@@ -3,7 +3,9 @@ import { env } from 'cloudflare:workers'
 import { getCurrentUser } from '@/lib/auth/session'
 import {
   fromMinorUnits,
-  getOrderTotals,
+  estimatePrintfulOrderCosts,
+  getPrintfulCustomerTotals,
+  getPrintfulItemPrice,
   getPricedCheckoutItems,
   getPrintfulShippingRates,
   parseCheckoutAddress,
@@ -11,11 +13,6 @@ import {
   type PricedCheckoutItem,
   type PrintfulShippingRate,
 } from '@/lib/checkout/printful'
-import {
-  calculateStripeTax,
-  StripeTaxError,
-  type StripeTaxCalculation,
-} from '@/lib/checkout/stripe-tax'
 import { isPrintfulShippingCountry } from '@/lib/checkout/shipping-countries'
 import { createOrder, setOrderStripeSessionId, updateOrderStatus } from '@/lib/db/orders'
 
@@ -77,7 +74,8 @@ export async function POST(request: Request) {
 
   let pricedItems: PricedCheckoutItem[]
   let rate: PrintfulShippingRate | undefined
-  let taxCalculation: StripeTaxCalculation | undefined
+  let totals: ReturnType<typeof getPrintfulCustomerTotals> | undefined
+  let itemPrices: number[] = []
   try {
     pricedItems = await getPricedCheckoutItems(items, printfulToken, env.PRINTFUL_STORE_ID)
     const rates = await getPrintfulShippingRates(
@@ -88,41 +86,40 @@ export async function POST(request: Request) {
     )
     rate = rates.find((candidate) => candidate.id === shippingRateId)
     if (rate) {
-      taxCalculation = await calculateStripeTax(
-        secretKey,
+      const estimate = await estimatePrintfulOrderCosts(
         pricedItems,
         address,
-        rate.amountCents,
-        rate.currency,
+        rate.id,
+        printfulToken,
+        env.PRINTFUL_STORE_ID,
       )
+      const quantity = pricedItems.reduce((sum, item) => sum + item.quantity, 0)
+      totals = getPrintfulCustomerTotals(estimate, quantity)
+      itemPrices = await Promise.all(
+        pricedItems.map((item) =>
+          getPrintfulItemPrice(item, address, printfulToken, env.PRINTFUL_STORE_ID, rate.id),
+        ),
+      )
+      if (itemPrices.some((price) => !Number.isInteger(price))) {
+        throw new Error('Printful returned incomplete item prices.')
+      }
     }
   } catch (error) {
     console.error('[Checkout] Could not verify Printful prices and shipping:', error)
-    if (error instanceof StripeTaxError) {
-      return NextResponse.json(
-        { message: error.message },
-        { status: error.status >= 500 || error.status === 401 || error.status === 403 ? 502 : 422 },
-      )
-    }
     return NextResponse.json({ message: 'Could not verify shipping. Please try again.' }, { status: 502 })
   }
 
   if (
     !rate ||
-    !taxCalculation ||
-    rate.amountCents !== expectedShippingCents ||
-    rate.currency !== expectedCurrency ||
-    taxCalculation.totalCents !== expectedTotalCents
+    !totals ||
+    totals.shippingCents !== expectedShippingCents ||
+    totals.currency !== expectedCurrency ||
+    totals.totalCents !== expectedTotalCents
   ) {
     return NextResponse.json(
       { message: 'Shipping or tax prices changed. Please calculate them again.' },
       { status: 409 },
     )
-  }
-
-  const totals = getOrderTotals(pricedItems, rate.amountCents, taxCalculation.taxCents)
-  if (totals.currency !== rate.currency) {
-    return NextResponse.json({ message: 'The selected shipping rate uses a different currency.' }, { status: 409 })
   }
 
   let order
@@ -132,8 +129,19 @@ export async function POST(request: Request) {
       userId: user?.id || `guest_${crypto.randomUUID()}`,
       email,
       status: 'pending',
-      items: pricedItems.map(({ printfulVariantId: _printfulVariantId, priceCents: _priceCents, ...item }) => item),
-      subtotal: fromMinorUnits(totals.subtotalCents, totals.currency),
+      items: pricedItems.map(({ printfulVariantId: _printfulVariantId, priceCents: _priceCents, ...item }, index) => {
+        const priceCents = itemPrices[index]
+        if (priceCents === undefined) throw new Error('Printful returned an incomplete item price.')
+        return {
+          ...item,
+          price: fromMinorUnits(priceCents, totals.currency),
+          currency: totals.currency,
+        }
+      }),
+      subtotal: fromMinorUnits(
+        totals.totalCents - totals.shippingCents - totals.taxCents,
+        totals.currency,
+      ),
       shippingCost: fromMinorUnits(totals.shippingCents, totals.currency),
       tax: fromMinorUnits(totals.taxCents, totals.currency),
       total: fromMinorUnits(totals.totalCents, totals.currency),
@@ -156,8 +164,7 @@ export async function POST(request: Request) {
   params.set('receipt_email', email)
   params.set('metadata[order_id]', order.id)
   params.set('metadata[shipping_rate_id]', rate.id)
-  params.set('metadata[tax_calculation_id]', taxCalculation.id)
-  params.set('metadata[checkout_flow]', 'payment_element')
+  params.set('metadata[checkout_flow]', 'printful_cost_plus')
   params.set('shipping[name]', address.name)
   params.set('shipping[address][line1]', address.address1)
   params.set('shipping[address][city]', address.city)

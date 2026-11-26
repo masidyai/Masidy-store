@@ -12,7 +12,7 @@ export interface MasidyVariant {
   size: string
   color: string
   color_code: string
-  retail_price: string
+  storefront_price: string
   currency: string
   preview_url: string
   in_stock: boolean

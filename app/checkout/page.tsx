@@ -21,6 +21,10 @@ interface CheckoutRate {
   minDeliveryDays?: number
   maxDeliveryDays?: number
   taxCents: number
+  digitizationCents: number
+  otherFeesCents: number
+  subtotalCents: number
+  adjustmentCents: number
   totalCents: number
 }
 
@@ -230,7 +234,7 @@ export default function CheckoutPage() {
   }))
   const displayedCurrency = quote?.currency ?? currency
   const displayedSubtotal = quote
-    ? fromMinorUnits(quote.subtotalCents, quote.currency)
+    ? fromMinorUnits(selectedRate?.subtotalCents ?? quote.subtotalCents, quote.currency)
     : subtotal
 
   return (
@@ -315,7 +319,7 @@ export default function CheckoutPage() {
                 </span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Tax</span>
+                <span className="text-muted-foreground">Tax / VAT (Printful estimate)</span>
                 <span>
                   {quote && selectedRate
                     ? formatPrice(
@@ -325,6 +329,24 @@ export default function CheckoutPage() {
                     : 'Calculated after address'}
                 </span>
               </div>
+              {quote && selectedRate && selectedRate.digitizationCents > 0 && (
+                <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Digitization</span>
+                    <span>{formatPrice(fromMinorUnits(selectedRate.digitizationCents, quote.currency), quote.currency)}</span>
+                </div>
+              )}
+              {quote && selectedRate && selectedRate.otherFeesCents > 0 && (
+                <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Other Printful fees</span>
+                    <span>{formatPrice(fromMinorUnits(selectedRate.otherFeesCents, quote.currency), quote.currency)}</span>
+                </div>
+              )}
+              {quote && selectedRate && selectedRate.adjustmentCents !== 0 && (
+                <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Printful order adjustment</span>
+                    <span>{formatPrice(fromMinorUnits(selectedRate.adjustmentCents, quote.currency), quote.currency)}</span>
+                </div>
+              )}
               <div className="flex justify-between border-t border-border pt-2 text-base font-semibold sm:text-lg">
                 <span>Total</span>
                 <span>
@@ -334,7 +356,9 @@ export default function CheckoutPage() {
                 </span>
               </div>
               {!selectedRate && (
-                <p className="text-xs text-muted-foreground">Shipping and tax are confirmed before payment.</p>
+                <p className="text-xs text-muted-foreground">
+                  Shipping, digitization, and Printful tax are confirmed before payment.
+                </p>
               )}
             </div>
           </div>
@@ -725,6 +749,8 @@ function isCheckoutQuote(value: unknown): value is CheckoutQuote {
     isRecord(value) &&
     typeof value.currency === 'string' &&
     typeof value.subtotalCents === 'number' &&
+    typeof value.adjustmentCents === 'number' &&
+    typeof value.markupCents === 'number' &&
     Array.isArray(value.items) &&
     value.items.every((item) =>
       isRecord(item) &&
@@ -743,6 +769,10 @@ function isCheckoutQuote(value: unknown): value is CheckoutQuote {
       typeof rate.amountCents === 'number' &&
       typeof rate.currency === 'string' &&
       typeof rate.taxCents === 'number' &&
+      typeof rate.digitizationCents === 'number' &&
+      typeof rate.otherFeesCents === 'number' &&
+      typeof rate.subtotalCents === 'number' &&
+      typeof rate.adjustmentCents === 'number' &&
       typeof rate.totalCents === 'number',
     )
   )

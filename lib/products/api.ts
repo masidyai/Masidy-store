@@ -1,6 +1,9 @@
 import type { MasidyProduct, Product, ProductVariant, Collection } from './types'
 import { MOCK_COLLECTIONS } from './mock-data'
 import { env } from 'cloudflare:workers'
+import { getPrintfulItemPrice } from '@/lib/checkout/printful'
+import type { CheckoutAddress, PricedCheckoutItem } from '@/lib/checkout/printful'
+import { fromMinorUnits, toMinorUnits } from '@/lib/checkout/money'
 
 /**
  * Masidy Product API
@@ -10,6 +13,18 @@ import { env } from 'cloudflare:workers'
 // Printful API configuration
 const PRINTFUL_API_BASE = 'https://api.printful.com'
 const PRINTFUL_REVALIDATE_SECONDS = 300
+const PRICE_ESTIMATE_ADDRESS: CheckoutAddress = {
+  name: 'Masidy price estimate',
+  email: 'pricing@example.com',
+  address1: 'Via Roma 1',
+  city: 'Rome',
+  zip: '00100',
+  country: 'IT',
+}
+const storefrontPriceCache = new Map<string, {
+  expiresAt: number
+  value: Promise<{ price: number; currency: string }>
+}>()
 
 async function fetchFromPrintful<T>(path: string): Promise<T> {
   const headers: Record<string, string> = {
@@ -82,6 +97,26 @@ async function fetchPrintfulProductsAsMasidy(): Promise<MasidyProduct[]> {
               || catalogVariant?.image
               || sp.thumbnail_url 
               || '/placeholder.svg'
+            const currency = sv.currency || 'USD'
+            const currentPriceCents = toMinorUnits(sv.retail_price || '0.00', currency)
+            if (currentPriceCents === null || !Number.isInteger(sv.id) || !Number.isInteger(sv.variant_id)) {
+              throw new Error('Printful returned an invalid sync variant for price estimation.')
+            }
+            const checkoutItem: PricedCheckoutItem = {
+              id: String(sv.id),
+              productId: String(sp.id),
+              variantId: String(sv.id),
+              title: sp.name,
+              color: catalogVariant?.color || extractColor(sv.name) || 'Default',
+              size: catalogVariant?.size || extractSize(sv.name) || 'One Size',
+              image: previewImage,
+              price: fromMinorUnits(currentPriceCents, currency),
+              priceCents: currentPriceCents,
+              quantity: 1,
+              currency,
+              printfulVariantId: sv.variant_id,
+            }
+            const storefrontPrice = await getCachedStorefrontPrice(checkoutItem)
 
             return {
               id: sv.id,
@@ -91,8 +126,8 @@ async function fetchPrintfulProductsAsMasidy(): Promise<MasidyProduct[]> {
               size: catalogVariant?.size || extractSize(sv.name) || 'One Size',
               color: catalogVariant?.color || extractColor(sv.name) || 'Default',
               color_code: catalogVariant?.color_code || '#cccccc',
-              retail_price: sv.retail_price || '0.00',
-              currency: sv.currency || 'USD',
+              storefront_price: storefrontPrice.price.toFixed(2),
+              currency: storefrontPrice.currency,
               preview_url: previewImage,
               in_stock: catalogVariant?.in_stock !== false,
             }
@@ -189,7 +224,7 @@ function normalize(raw: MasidyProduct): Product {
     size: v.size,
     color: v.color,
     colorCode: v.color_code,
-    price: Number.parseFloat(v.retail_price),
+    price: Number.parseFloat(v.storefront_price),
     currency: v.currency,
     image: v.preview_url,
     available: v.in_stock,
@@ -222,6 +257,30 @@ function normalize(raw: MasidyProduct): Product {
     },
     variants,
     createdAt: raw.createdAt,
+  }
+}
+
+async function getCachedStorefrontPrice(item: PricedCheckoutItem) {
+  const key = `${env.PRINTFUL_STORE_ID ?? ''}:${item.variantId}`
+  const cached = storefrontPriceCache.get(key)
+  if (cached && cached.expiresAt > Date.now()) return cached.value
+
+  const token = env.PRINTFUL_API_TOKEN
+  if (!token) throw new Error('Printful price estimate unavailable: PRINTFUL_API_TOKEN is not configured.')
+  const value = getPrintfulItemPrice(
+    item,
+    PRICE_ESTIMATE_ADDRESS,
+    token,
+    env.PRINTFUL_STORE_ID,
+  ).then((price) => ({ price, currency: item.currency }))
+  const entry = { expiresAt: Date.now() + PRINTFUL_REVALIDATE_SECONDS * 1000, value }
+  storefrontPriceCache.set(key, entry)
+
+  try {
+    return await value
+  } catch (error) {
+    if (storefrontPriceCache.get(key) === entry) storefrontPriceCache.delete(key)
+    throw error
   }
 }
 

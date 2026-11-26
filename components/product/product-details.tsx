@@ -65,6 +65,9 @@ export function ProductDetails({ product }: { product: Product }) {
       <p className="mt-2 text-xl font-medium tabular-nums sm:mt-3 sm:text-2xl">
         {formatPrice(selectedVariant?.price ?? product.priceRange.min, product.priceRange.currency)}
       </p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Shipping, digitization, and Printful tax are estimated at checkout.
+      </p>
 
       <p className="mt-4 text-xs leading-relaxed text-muted-foreground sm:mt-6 sm:text-sm">{product.description}</p>
 

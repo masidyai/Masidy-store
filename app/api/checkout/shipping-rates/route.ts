@@ -1,14 +1,16 @@
 import { NextResponse } from 'next/server'
 import { env } from 'cloudflare:workers'
 import {
-  getOrderTotals,
+  estimatePrintfulOrderCosts,
+  getPrintfulCustomerTotals,
+  getPrintfulItemPrice,
   getPricedCheckoutItems,
   getPrintfulShippingRates,
   parseCheckoutAddress,
   parseCheckoutItems,
+  PRINTFUL_MARKUP_CENTS_PER_ITEM,
 } from '@/lib/checkout/printful'
 import { isPrintfulShippingCountry } from '@/lib/checkout/shipping-countries'
-import { calculateStripeTax, StripeTaxError } from '@/lib/checkout/stripe-tax'
 
 export async function POST(request: Request) {
   let body: unknown
@@ -31,67 +33,85 @@ export async function POST(request: Request) {
   }
 
   const token = env.PRINTFUL_API_TOKEN
-  const stripeSecretKey = env.STRIPE_SECRET_KEY
-  if (!token || !stripeSecretKey) {
-    return NextResponse.json({ message: 'Shipping and tax quotes are temporarily unavailable.' }, { status: 503 })
+  if (!token) {
+    return NextResponse.json({ message: 'Printful pricing is temporarily unavailable.' }, { status: 503 })
   }
 
   try {
     const pricedItems = await getPricedCheckoutItems(items, token, env.PRINTFUL_STORE_ID)
     const rates = await getPrintfulShippingRates(pricedItems, address, token, env.PRINTFUL_STORE_ID)
-    if (rates.length === 0) {
+    const primaryRate = rates[0]
+    if (!primaryRate) {
       return NextResponse.json(
         { message: 'No shipping methods are available for this address and cart.' },
         { status: 422 },
       )
     }
 
-    const quotedRates = await Promise.all(rates.map(async (rate) => {
-      const taxCalculation = await calculateStripeTax(
-        stripeSecretKey,
+    const itemPrices = await Promise.all(
+      pricedItems.map((item) =>
+        getPrintfulItemPrice(item, address, token, env.PRINTFUL_STORE_ID, primaryRate.id),
+      ),
+    )
+    if (itemPrices.length !== pricedItems.length || itemPrices.some((price) => !Number.isInteger(price))) {
+      throw new Error('Printful returned incomplete item prices.')
+    }
+    const totalQuantity = pricedItems.reduce((sum, item) => sum + item.quantity, 0)
+    const itemSubtotalCents = pricedItems.reduce(
+      (sum, item, index) => {
+        const priceCents = itemPrices[index]
+        if (priceCents === undefined) throw new Error('Printful returned an incomplete item price.')
+        return sum + priceCents * item.quantity
+      },
+      0,
+    )
+    const estimates = await Promise.all(rates.map(async (rate) => {
+      const estimate = await estimatePrintfulOrderCosts(
         pricedItems,
         address,
-        rate.amountCents,
-        rate.currency,
+        rate.id,
+        token,
+        env.PRINTFUL_STORE_ID,
       )
-      const totals = getOrderTotals(pricedItems, rate.amountCents, taxCalculation.taxCents)
-      if (taxCalculation.totalCents !== totals.totalCents) {
-        throw new Error('Stripe Tax returned inconsistent totals.')
-      }
+      const totals = getPrintfulCustomerTotals(estimate, totalQuantity)
       return {
         ...rate,
-        taxCents: taxCalculation.taxCents,
-        totalCents: taxCalculation.totalCents,
+        currency: totals.currency,
+        amountCents: totals.shippingCents,
+        taxCents: totals.taxCents,
+        digitizationCents: totals.digitizationCents,
+        otherFeesCents: totals.otherFeesCents,
+        subtotalCents: totals.subtotalCents,
+        adjustmentCents: totals.subtotalCents - itemSubtotalCents,
+        totalCents: totals.totalCents,
       }
     }))
 
+    const primaryEstimate = estimates[0]
+    if (!primaryEstimate) throw new Error('Printful returned no usable order estimate.')
+
     return NextResponse.json({
-      currency: pricedItems[0]?.currency ?? 'USD',
-      subtotalCents: pricedItems.reduce((sum, item) => sum + item.priceCents * item.quantity, 0),
-      items: pricedItems.map(({ id, title, color, size, priceCents, quantity }) => ({
+      currency: primaryEstimate.currency,
+      subtotalCents: primaryEstimate.subtotalCents,
+      adjustmentCents: primaryEstimate.subtotalCents - itemSubtotalCents,
+      markupCents: PRINTFUL_MARKUP_CENTS_PER_ITEM * totalQuantity,
+      items: pricedItems.map(({ id, title, color, size, quantity }, index) => ({
         id,
         title,
         color,
         size,
-        priceCents,
+        priceCents: itemPrices[index],
         quantity,
       })),
-      rates: quotedRates,
+      rates: estimates,
     })
   } catch (error) {
     console.error('[Checkout] Printful shipping quote failed:', error)
     return NextResponse.json(
       {
-        message: error instanceof StripeTaxError
-          ? error.message
-          : 'Could not calculate shipping and tax. Please check the address and try again.',
+        message: 'Could not calculate Printful costs. Please check the address and try again.',
       },
-      {
-        status: error instanceof StripeTaxError &&
-          error.status < 500 && error.status !== 401 && error.status !== 403
-          ? 422
-          : 502,
-      },
+      { status: 502 },
     )
   }
 }

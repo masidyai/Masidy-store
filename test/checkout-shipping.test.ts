@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
+  estimatePrintfulOrderCosts,
+  getPrintfulCustomerTotals,
+  getPrintfulItemPrice,
   getOrderTotals,
   getPricedCheckoutItems,
   getPrintfulShippingRates,
@@ -109,6 +112,108 @@ test('Printful catalog variant and shipping rates determine checkout charges', a
   } finally {
     globalThis.fetch = originalFetch
   }
+})
+
+test('Printful order estimates include fulfillment fees and a fixed per-item markup', async () => {
+  const originalFetch = globalThis.fetch
+  let estimateRequest: Record<string, unknown> | undefined
+  globalThis.fetch = async (input, init) => {
+    assert.ok(String(input).endsWith('/orders/estimate-costs'))
+    estimateRequest = JSON.parse(String(init?.body)) as Record<string, unknown>
+    return Response.json({
+      result: {
+        costs: {
+          currency: 'USD',
+          subtotal: 50,
+          discount: 1,
+          shipping: 6.45,
+          digitization: 3,
+          additional_fee: 0.75,
+          fulfillment_fee: 0,
+          retail_delivery_fee: 0,
+          tax: 0.5,
+          vat: 0,
+          total: 59.7,
+        },
+      },
+    })
+  }
+
+  try {
+    const items = parseCheckoutItems([{ productId: '42', variantId: '84', quantity: 2 }])
+    const address = parseCheckoutAddress({
+      name: 'Customer',
+      email: 'customer@example.com',
+      address1: '12 Example Street',
+      city: 'Cairo',
+      country: 'EG',
+    })
+    assert.ok(items)
+    assert.ok(address)
+    const pricedItems = [{
+      ...items[0]!,
+      id: items[0]!.variantId,
+      price: 25.99,
+      priceCents: 2599,
+      currency: 'USD',
+      printfulVariantId: 501,
+    }]
+
+    const estimate = await estimatePrintfulOrderCosts(
+      pricedItems,
+      address,
+      'EXPRESS',
+      'test-token',
+      'store-1',
+    )
+    assert.deepEqual(estimate, {
+      currency: 'USD',
+      subtotalCents: 4900,
+      discountCents: 100,
+      shippingCents: 645,
+      digitizationCents: 300,
+      taxCents: 50,
+      otherFeesCents: 75,
+      totalCents: 5970,
+    })
+    assert.deepEqual(estimateRequest?.items, [{ sync_variant_id: 84, quantity: 2 }])
+    assert.equal(estimateRequest?.shipping, 'EXPRESS')
+    assert.deepEqual(getPrintfulCustomerTotals(estimate, 2), {
+      currency: 'USD',
+      subtotalCents: 5900,
+      shippingCents: 645,
+      digitizationCents: 300,
+      taxCents: 50,
+      otherFeesCents: 75,
+      totalCents: 6970,
+    })
+    assert.equal(await getPrintfulItemPrice(pricedItems[0]!, address, 'test-token', 'store-1'), 2950)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('two-item EUR estimate adds the configured markup to the Printful total', () => {
+  const estimate = {
+    currency: 'EUR',
+    subtotalCents: 2951,
+    discountCents: 0,
+    shippingCents: 574,
+    digitizationCents: 1150,
+    taxCents: 1030,
+    otherFeesCents: 0,
+    totalCents: 5705,
+  }
+
+  assert.deepEqual(getPrintfulCustomerTotals(estimate, 2), {
+    currency: 'EUR',
+    subtotalCents: 3951,
+    shippingCents: 574,
+    digitizationCents: 1150,
+    taxCents: 1030,
+    otherFeesCents: 0,
+    totalCents: 6705,
+  })
 })
 
 test('Stripe Tax calculates tax using the destination address and Printful shipping cost', async () => {

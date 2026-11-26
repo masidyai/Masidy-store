@@ -39,6 +39,17 @@ export interface PrintfulShippingRate {
   maxDeliveryDays?: number
 }
 
+export interface PrintfulOrderCostEstimate {
+  currency: string
+  subtotalCents: number
+  discountCents: number
+  shippingCents: number
+  digitizationCents: number
+  taxCents: number
+  otherFeesCents: number
+  totalCents: number
+}
+
 interface PrintfulSyncVariant {
   id: number
   variant_id: number
@@ -48,6 +59,7 @@ interface PrintfulSyncVariant {
 }
 
 const PRINTFUL_API_BASE = 'https://api.printful.com'
+export const PRINTFUL_MARKUP_CENTS_PER_ITEM = 500
 
 export function parseCheckoutItems(value: unknown): CheckoutCartItem[] | null {
   if (!Array.isArray(value) || value.length === 0 || value.length > 50) return null
@@ -263,6 +275,126 @@ export async function getPrintfulShippingRates(
   return rates
 }
 
+export async function estimatePrintfulOrderCosts(
+  items: PricedCheckoutItem[],
+  address: CheckoutAddress,
+  shipping: string,
+  token: string,
+  storeId?: string,
+): Promise<PrintfulOrderCostEstimate> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  }
+  if (storeId) headers['X-PF-Store-Id'] = storeId
+
+  const response = await fetch(`${PRINTFUL_API_BASE}/orders/estimate-costs`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      shipping,
+      recipient: {
+        name: address.name,
+        email: address.email,
+        address1: address.address1,
+        address2: address.address2,
+        city: address.city,
+        state_code: address.state,
+        country_code: address.country,
+        zip: address.zip,
+        phone: address.phone,
+      },
+      items: items.map((item) => ({
+        sync_variant_id: Number(item.variantId),
+        quantity: item.quantity,
+      })),
+    }),
+  })
+  if (!response.ok) {
+    throw new Error(`Printful order cost estimate failed (${response.status}).`)
+  }
+
+  const payload: unknown = await response.json()
+  if (!isRecord(payload) || !isRecord(payload.result) || !isRecord(payload.result.costs)) {
+    throw new Error('Printful returned an invalid order cost estimate.')
+  }
+
+  const costs = payload.result.costs
+  const currency = typeof costs.currency === 'string' ? costs.currency.toUpperCase() : ''
+  const subtotalCents = toMinorUnits(costs.subtotal, currency)
+  const discountCents = toMinorUnits(costs.discount, currency)
+  const shippingCents = toMinorUnits(costs.shipping, currency)
+  const digitizationCents = toMinorUnits(costs.digitization, currency)
+  const taxCents = addMinorUnits(costs.tax, costs.vat, currency)
+  const totalCents = toMinorUnits(costs.total, currency)
+
+  if (
+    !/^[A-Z]{3}$/.test(currency) ||
+    subtotalCents === null ||
+    discountCents === null ||
+    shippingCents === null ||
+    digitizationCents === null ||
+    taxCents === null ||
+    totalCents === null ||
+    discountCents > subtotalCents ||
+    items.some((item) => item.currency !== currency)
+  ) {
+    throw new Error('Printful returned invalid order cost amounts.')
+  }
+
+  const otherFeesCents =
+    totalCents -
+    (subtotalCents - discountCents + shippingCents + digitizationCents + taxCents)
+  if (otherFeesCents < 0) {
+    throw new Error('Printful returned inconsistent order cost amounts.')
+  }
+
+  return {
+    currency,
+    subtotalCents: subtotalCents - discountCents,
+    discountCents,
+    shippingCents,
+    digitizationCents,
+    taxCents,
+    otherFeesCents,
+    totalCents,
+  }
+}
+
+export async function getPrintfulItemPrice(
+  item: PricedCheckoutItem,
+  address: CheckoutAddress,
+  token: string,
+  storeId?: string,
+  shipping = 'STANDARD',
+): Promise<number> {
+  const estimate = await estimatePrintfulOrderCosts(
+    [item],
+    address,
+    shipping,
+    token,
+    storeId,
+  )
+  const priceCents = estimate.subtotalCents + PRINTFUL_MARKUP_CENTS_PER_ITEM * item.quantity
+  return Math.round(priceCents / item.quantity)
+}
+
+export function getPrintfulCustomerTotals(
+  estimate: PrintfulOrderCostEstimate,
+  quantity: number,
+) {
+  const markupCents = PRINTFUL_MARKUP_CENTS_PER_ITEM * quantity
+  return {
+    currency: estimate.currency,
+    subtotalCents: estimate.subtotalCents + markupCents,
+    shippingCents: estimate.shippingCents,
+    digitizationCents: estimate.digitizationCents,
+    taxCents: estimate.taxCents,
+    otherFeesCents: estimate.otherFeesCents,
+    totalCents: estimate.totalCents + markupCents,
+  }
+}
+
 export function getOrderTotals(
   items: PricedCheckoutItem[],
   shippingCents: number,
@@ -277,6 +409,12 @@ export function getOrderTotals(
     shippingCents,
     totalCents: subtotalCents + taxCents + shippingCents,
   }
+}
+
+function addMinorUnits(first: unknown, second: unknown, currency: string): number | null {
+  const firstCents = toMinorUnits(first, currency)
+  const secondCents = toMinorUnits(second, currency)
+  return firstCents === null || secondCents === null ? null : firstCents + secondCents
 }
 
 function positiveIntegerString(value: unknown): string | null {
