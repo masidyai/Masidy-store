@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { env } from 'cloudflare:workers'
 import type { CartItem } from '@/lib/products/types'
 import { getCurrentUser } from '@/lib/auth/session'
+import { addShippingCountries } from '@/lib/checkout/shipping-countries'
 import { createOrder } from '@/lib/db/orders'
 import { sendOrderConfirmationEmail } from '@/lib/email/send'
 
@@ -63,9 +64,7 @@ export async function POST(request: Request) {
   params.set('customer_email', email)
   params.set('success_url', `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`)
   params.set('cancel_url', `${origin}/checkout`)
-  params.set('shipping_address_collection[allowed_countries][0]', 'US')
-  params.set('shipping_address_collection[allowed_countries][1]', 'CA')
-  params.set('shipping_address_collection[allowed_countries][2]', 'GB')
+  addShippingCountries(params)
 
   items.forEach((item, i) => {
     const currency = (item.currency || 'USD').toLowerCase()
