@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Download, X, Share } from 'lucide-react'
+import { usePathname } from 'next/navigation'
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -9,6 +10,7 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 export function PWAInstallPrompt() {
+  const pathname = usePathname()
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [showPrompt, setShowPrompt] = useState(false)
   const [isInstalled, setIsInstalled] = useState(false)
@@ -89,7 +91,7 @@ export function PWAInstallPrompt() {
     setShowPrompt(false)
   }
 
-  if (!showPrompt || isInstalled) {
+  if (!showPrompt || isInstalled || pathname.startsWith('/checkout')) {
     return null
   }
 
