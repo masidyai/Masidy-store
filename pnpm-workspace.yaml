@@ -2,9 +2,9 @@ packages:
   - .
 
 allowBuilds:
-  bufferutil: false
+  bufferutil: true
   esbuild: true
-  msw: false
+  msw: true
   sharp: true
   workerd: true
 
