@@ -31,7 +31,7 @@ Configure all five values below as Worker secrets on the production Worker, not 
 - `RESEND_API_KEY`
 - `ADMIN_SETUP_TOKEN` (one-time initial admin setup; rotate it after promoting the intended account)
 
-`PRINTFUL_STORE_ID` is optional and is a non-secret Worker variable; set it in `cloudflare.config.ts` only when using a Printful account token that needs an explicit store selection.
+The production catalog reads synced products directly from Printful store `Negozio di Ragab` (`19117823`). New products appear automatically within five minutes. Do not add a mock-product fallback: catalog credential or API errors should be surfaced rather than shown as products for sale.
 
 `PUBLIC_SITE_URL`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, and `USE_PAYMENT_LINKS` are non-secret Worker variables. The public site URL defaults to `https://www.masidy.store`; the local staging value defaults to `http://localhost:3001`. Update the staging value before deploying a preview to a public hostname. The Stripe publishable key is not a secret key.
 

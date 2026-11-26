@@ -1,5 +1,5 @@
 import type { MasidyProduct, Product, ProductVariant, Collection } from './types'
-import { MOCK_PRODUCTS, MOCK_COLLECTIONS } from './mock-data'
+import { MOCK_COLLECTIONS } from './mock-data'
 import { env } from 'cloudflare:workers'
 
 /**
@@ -9,9 +9,7 @@ import { env } from 'cloudflare:workers'
 
 // Printful API configuration
 const PRINTFUL_API_BASE = 'https://api.printful.com'
-function hasPrintfulCredentials(): boolean {
-  return Boolean(env.PRINTFUL_API_TOKEN)
-}
+const PRINTFUL_REVALIDATE_SECONDS = 300
 
 async function fetchFromPrintful<T>(path: string): Promise<T> {
   const headers: Record<string, string> = {
@@ -24,7 +22,7 @@ async function fetchFromPrintful<T>(path: string): Promise<T> {
 
   const res = await fetch(`${PRINTFUL_API_BASE}${path}`, {
     headers,
-    next: { revalidate: 3600 }, // Cache for 1 hour
+    next: { revalidate: PRINTFUL_REVALIDATE_SECONDS },
   })
 
   if (!res.ok) {
@@ -36,21 +34,13 @@ async function fetchFromPrintful<T>(path: string): Promise<T> {
 }
 
 async function getRawProducts(): Promise<MasidyProduct[]> {
-  // Try to fetch from Printful first
-  if (hasPrintfulCredentials()) {
-    try {
-      const products = await fetchPrintfulProductsAsMasidy()
-      if (products.length > 0) {
-        console.log(`[Masidy] Loaded ${products.length} products from Printful`)
-        return products
-      }
-    } catch (err) {
-      console.log('[Masidy] Printful fetch failed, using mock data:', (err as Error).message)
-    }
+  if (!env.PRINTFUL_API_TOKEN) {
+    throw new Error('Printful catalog unavailable: PRINTFUL_API_TOKEN is not configured.')
   }
 
-  // Fallback to mock data
-  return MOCK_PRODUCTS
+  const products = await fetchPrintfulProductsAsMasidy()
+  console.log(`[Masidy] Loaded ${products.length} products from Printful`)
+  return products
 }
 
 async function fetchPrintfulProductsAsMasidy(): Promise<MasidyProduct[]> {
@@ -61,7 +51,7 @@ async function fetchPrintfulProductsAsMasidy(): Promise<MasidyProduct[]> {
   const catalogCache = new Map<number, any>()
 
   const products = await Promise.all(
-    list.map(async (item): Promise<MasidyProduct | null> => {
+    list.map(async (item): Promise<MasidyProduct> => {
       try {
         const detail = await fetchFromPrintful<any>(`/store/products/${item.id}`)
         const sp = detail.sync_product
@@ -149,12 +139,12 @@ async function fetchPrintfulProductsAsMasidy(): Promise<MasidyProduct[]> {
         }
       } catch (err) {
         console.error('[Masidy] Failed to fetch product:', item.id, err)
-        return null
+        throw err
       }
     }),
   )
 
-  return products.filter((p): p is MasidyProduct => p !== null)
+  return products
 }
 
 // Helper functions
