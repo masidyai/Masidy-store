@@ -165,6 +165,7 @@ export async function POST(request: Request) {
   params.set('metadata[order_id]', order.id)
   params.set('metadata[shipping_rate_id]', rate.id)
   params.set('metadata[checkout_flow]', 'printful_cost_plus')
+  params.set('metadata[fulfillment_mode]', 'automatic')
   params.set('shipping[name]', address.name)
   params.set('shipping[address][line1]', address.address1)
   params.set('shipping[address][city]', address.city)

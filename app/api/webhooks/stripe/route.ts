@@ -109,7 +109,10 @@ async function handlePaymentIntentSucceeded(paymentIntent: any) {
       await sendConfirmationEmail(result.rows[0].id)
     }
 
-    if (paymentIntent.metadata?.checkout_flow === 'printful_cost_plus') {
+    if (
+      paymentIntent.metadata?.checkout_flow === 'printful_cost_plus' &&
+      paymentIntent.metadata?.fulfillment_mode === 'automatic'
+    ) {
       const shippingMethod = paymentIntent.metadata.shipping_rate_id
       const token = env.PRINTFUL_API_TOKEN
       if (typeof shippingMethod !== 'string' || !token) {
