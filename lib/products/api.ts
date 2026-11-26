@@ -126,7 +126,7 @@ async function fetchPrintfulProductsAsMasidy(): Promise<MasidyProduct[]> {
               size: catalogVariant?.size || extractSize(sv.name) || 'One Size',
               color: catalogVariant?.color || extractColor(sv.name) || 'Default',
               color_code: catalogVariant?.color_code || '#cccccc',
-              storefront_price: storefrontPrice.price.toFixed(2),
+              storefront_price: fromMinorUnits(storefrontPrice.price, storefrontPrice.currency).toFixed(2),
               currency: storefrontPrice.currency,
               preview_url: previewImage,
               in_stock: catalogVariant?.in_stock !== false,
