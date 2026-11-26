@@ -66,7 +66,7 @@ export function ProductDetails({ product }: { product: Product }) {
         {formatPrice(selectedVariant?.price ?? product.priceRange.min, product.priceRange.currency)}
       </p>
       <p className="mt-1 text-xs text-muted-foreground">
-        Shipping, digitization, and Printful tax are estimated at checkout.
+        Shipping, taxes, and any setup fees are calculated at checkout.
       </p>
 
       <p className="mt-4 text-xs leading-relaxed text-muted-foreground sm:mt-6 sm:text-sm">{product.description}</p>
@@ -159,7 +159,7 @@ export function ProductDetails({ product }: { product: Product }) {
       </button>
 
       <ul className="mt-6 space-y-2 border-t border-border pt-5 text-xs text-muted-foreground sm:mt-8 sm:pt-6 sm:text-sm">
-        <li>Printed to order — ships in 2–5 business days.</li>
+        <li>Made to order — ships in 2–5 business days.</li>
         <li>Free returns within 30 days.</li>
         <li>Made with responsibly sourced materials.</li>
       </ul>

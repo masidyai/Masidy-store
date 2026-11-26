@@ -89,7 +89,7 @@ export function CartDrawer() {
             </div>
             <p className="text-base font-medium">Your bag is empty</p>
             <p className="max-w-xs text-sm text-muted-foreground">
-              Printed to order and made to last. Find something you love.
+              Made with care and built to last. Find something you love.
             </p>
             <button
               type="button"

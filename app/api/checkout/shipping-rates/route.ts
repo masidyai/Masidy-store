@@ -34,7 +34,7 @@ export async function POST(request: Request) {
 
   const token = env.PRINTFUL_API_TOKEN
   if (!token) {
-    return NextResponse.json({ message: 'Printful pricing is temporarily unavailable.' }, { status: 503 })
+    return NextResponse.json({ message: 'Product pricing is temporarily unavailable.' }, { status: 503 })
   }
 
   try {
@@ -109,7 +109,7 @@ export async function POST(request: Request) {
     console.error('[Checkout] Printful shipping quote failed:', error)
     return NextResponse.json(
       {
-        message: 'Could not calculate Printful costs. Please check the address and try again.',
+        message: 'Could not calculate your order costs. Please check the address and try again.',
       },
       { status: 502 },
     )

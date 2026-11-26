@@ -319,7 +319,7 @@ export default function CheckoutPage() {
                 </span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Tax / VAT (Printful estimate)</span>
+                <span className="text-muted-foreground">Tax / VAT (estimated)</span>
                 <span>
                   {quote && selectedRate
                     ? formatPrice(
@@ -331,19 +331,19 @@ export default function CheckoutPage() {
               </div>
               {quote && selectedRate && selectedRate.digitizationCents > 0 && (
                 <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Digitization</span>
+                    <span className="text-muted-foreground">Artwork setup</span>
                     <span>{formatPrice(fromMinorUnits(selectedRate.digitizationCents, quote.currency), quote.currency)}</span>
                 </div>
               )}
               {quote && selectedRate && selectedRate.otherFeesCents > 0 && (
                 <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Other Printful fees</span>
+                    <span className="text-muted-foreground">Additional fees</span>
                     <span>{formatPrice(fromMinorUnits(selectedRate.otherFeesCents, quote.currency), quote.currency)}</span>
                 </div>
               )}
               {quote && selectedRate && selectedRate.adjustmentCents !== 0 && (
                 <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Printful order adjustment</span>
+                    <span className="text-muted-foreground">Price adjustment</span>
                     <span>{formatPrice(fromMinorUnits(selectedRate.adjustmentCents, quote.currency), quote.currency)}</span>
                 </div>
               )}
@@ -357,7 +357,7 @@ export default function CheckoutPage() {
               </div>
               {!selectedRate && (
                 <p className="text-xs text-muted-foreground">
-                  Shipping, digitization, and Printful tax are confirmed before payment.
+                  Shipping, setup fees, and taxes are confirmed before payment.
                 </p>
               )}
             </div>
