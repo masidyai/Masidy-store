@@ -70,6 +70,15 @@ export async function createOrder(order: Omit<Order, 'id' | 'createdAt' | 'updat
   return parseOrderRow(row)
 }
 
+export async function setOrderStripeSessionId(orderId: string, stripeSessionId: string) {
+  await sql`
+    UPDATE orders
+    SET stripe_session_id = ${stripeSessionId},
+        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    WHERE id = ${orderId}
+  `
+}
+
 export async function getOrdersByUserId(userId: string) {
   const result = await sql<OrderRow>`
     SELECT * FROM orders WHERE user_id = ${userId} ORDER BY created_at DESC

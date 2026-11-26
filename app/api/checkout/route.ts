@@ -1,88 +1,175 @@
 import { NextResponse } from 'next/server'
 import { env } from 'cloudflare:workers'
-import type { CartItem } from '@/lib/products/types'
 import { getCurrentUser } from '@/lib/auth/session'
-import { addShippingCountries } from '@/lib/checkout/shipping-countries'
-import { createOrder } from '@/lib/db/orders'
-import { sendOrderConfirmationEmail } from '@/lib/email/send'
+import {
+  fromMinorUnits,
+  getOrderTotals,
+  getPricedCheckoutItems,
+  getPrintfulShippingRates,
+  parseCheckoutAddress,
+  parseCheckoutItems,
+  type PricedCheckoutItem,
+  type PrintfulShippingRate,
+} from '@/lib/checkout/printful'
+import {
+  calculateStripeTax,
+  StripeTaxError,
+  type StripeTaxCalculation,
+} from '@/lib/checkout/stripe-tax'
+import { isPrintfulShippingCountry } from '@/lib/checkout/shipping-countries'
+import { createOrder, setOrderStripeSessionId, updateOrderStatus } from '@/lib/db/orders'
 
-/**
- * Stripe-ready checkout endpoint with Payment Link fallback.
- *
- * Supports two modes:
- *   1. Full Checkout Session (requires activated Stripe account)
- *   2. Payment Link via Email (works immediately, even in test mode)
- *
- * Set USE_PAYMENT_LINKS=true to use email payment links instead of checkout session.
- */
+export async function GET() {
+  const publishableKey = env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+  if (!publishableKey) {
+    return NextResponse.json({ message: 'Payments are not configured.' }, { status: 503 })
+  }
+  return NextResponse.json({ publishableKey })
+}
+
 export async function POST(request: Request) {
-  const { items, email, shippingAddress, usePaymentLink } = (await request.json()) as {
-    items: CartItem[]
-    email: string
-    shippingAddress?: any
-    usePaymentLink?: boolean
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ message: 'Invalid checkout request.' }, { status: 400 })
   }
 
-  if (!items || items.length === 0) {
-    return NextResponse.json({ message: 'Your cart is empty.' }, { status: 400 })
+  if (!isRecord(body)) {
+    return NextResponse.json({ message: 'Invalid checkout request.' }, { status: 400 })
+  }
+
+  const items = parseCheckoutItems(body.items)
+  const address = parseCheckoutAddress(body.shippingAddress)
+  const email = typeof body.email === 'string' ? body.email.trim() : ''
+  const shippingRateId = typeof body.shippingRateId === 'string' ? body.shippingRateId : ''
+  const expectedShippingCents = body.expectedShippingCents
+  const expectedTotalCents = body.expectedTotalCents
+  const expectedCurrency = typeof body.expectedCurrency === 'string'
+    ? body.expectedCurrency.toUpperCase()
+    : ''
+
+  if (
+    !items ||
+    !address ||
+    !email ||
+    email !== address.email ||
+    !shippingRateId ||
+    typeof expectedShippingCents !== 'number' ||
+    !Number.isInteger(expectedShippingCents) ||
+    expectedShippingCents < 0 ||
+    typeof expectedTotalCents !== 'number' ||
+    !Number.isInteger(expectedTotalCents) ||
+    expectedTotalCents < 1 ||
+    !/^[A-Z]{3}$/.test(expectedCurrency)
+  ) {
+    return NextResponse.json({ message: 'Please check your shipping and payment details.' }, { status: 400 })
+  }
+  if (!isPrintfulShippingCountry(address.country)) {
+    return NextResponse.json({ message: 'Shipping is not available for this country.' }, { status: 400 })
   }
 
   const secretKey = env.STRIPE_SECRET_KEY
-  const usePaymentLinks = (await env.USE_PAYMENT_LINKS) === 'true' || usePaymentLink
-  
-  if (!secretKey) {
+  const printfulToken = env.PRINTFUL_API_TOKEN
+  if (!secretKey || !printfulToken) {
+    return NextResponse.json({ message: 'Checkout is temporarily unavailable.' }, { status: 503 })
+  }
+
+  let pricedItems: PricedCheckoutItem[]
+  let rate: PrintfulShippingRate | undefined
+  let taxCalculation: StripeTaxCalculation | undefined
+  try {
+    pricedItems = await getPricedCheckoutItems(items, printfulToken, env.PRINTFUL_STORE_ID)
+    const rates = await getPrintfulShippingRates(
+      pricedItems,
+      address,
+      printfulToken,
+      env.PRINTFUL_STORE_ID,
+    )
+    rate = rates.find((candidate) => candidate.id === shippingRateId)
+    if (rate) {
+      taxCalculation = await calculateStripeTax(
+        secretKey,
+        pricedItems,
+        address,
+        rate.amountCents,
+        rate.currency,
+      )
+    }
+  } catch (error) {
+    console.error('[Checkout] Could not verify Printful prices and shipping:', error)
+    if (error instanceof StripeTaxError) {
+      return NextResponse.json(
+        { message: error.message },
+        { status: error.status >= 500 || error.status === 401 || error.status === 403 ? 502 : 422 },
+      )
+    }
+    return NextResponse.json({ message: 'Could not verify shipping. Please try again.' }, { status: 502 })
+  }
+
+  if (
+    !rate ||
+    !taxCalculation ||
+    rate.amountCents !== expectedShippingCents ||
+    rate.currency !== expectedCurrency ||
+    taxCalculation.totalCents !== expectedTotalCents
+  ) {
     return NextResponse.json(
-      {
-        message:
-          'Checkout is not configured yet. Configure a Stripe secret in Cloudflare to enable payments.',
-      },
-      { status: 200 },
+      { message: 'Shipping or tax prices changed. Please calculate them again.' },
+      { status: 409 },
     )
   }
 
-  const isLiveMode = secretKey.startsWith('sk_live_')
-  console.info(`[Checkout] Using Stripe ${isLiveMode ? 'live' : 'test'} mode`)
-  console.info(`[Checkout] Payment method: ${usePaymentLinks ? 'Payment Links' : 'Checkout Session'}`)
+  const totals = getOrderTotals(pricedItems, rate.amountCents, taxCalculation.taxCents)
+  if (totals.currency !== rate.currency) {
+    return NextResponse.json({ message: 'The selected shipping rate uses a different currency.' }, { status: 409 })
+  }
 
-  // Calculate order totals
-  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0)
-  const tax = Math.round(subtotal * 0.1 * 100) / 100
-  const shippingCost = subtotal > 100 ? 0 : 10
-  const total = subtotal + tax + shippingCost
+  let order
+  try {
+    const user = await getCurrentUser()
+    order = await createOrder({
+      userId: user?.id || `guest_${crypto.randomUUID()}`,
+      email,
+      status: 'pending',
+      items: pricedItems.map(({ printfulVariantId: _printfulVariantId, priceCents: _priceCents, ...item }) => item),
+      subtotal: fromMinorUnits(totals.subtotalCents, totals.currency),
+      shippingCost: fromMinorUnits(totals.shippingCents, totals.currency),
+      tax: fromMinorUnits(totals.taxCents, totals.currency),
+      total: fromMinorUnits(totals.totalCents, totals.currency),
+      currency: totals.currency,
+      shippingAddress: {
+        ...address,
+        state: address.state ?? '',
+        zip: address.zip ?? '',
+      },
+    })
+  } catch (error) {
+    console.error('[Checkout] Failed to save the pending order:', error)
+    return NextResponse.json({ message: 'Unable to save the order.' }, { status: 500 })
+  }
 
-  // Get current user for order tracking (optional)
-  const user = await getCurrentUser()
-  const userId = user?.id || 'guest_' + Math.random().toString(36).substr(2, 9)
-
-  // Build Stripe checkout session
-  const origin =
-    (await env.PUBLIC_SITE_URL) || request.headers.get('origin') || new URL(request.url).origin
-
-  // Build application/x-www-form-urlencoded body for Stripe Checkout Sessions.
   const params = new URLSearchParams()
-  params.set('mode', 'payment')
-  params.set('customer_email', email)
-  params.set('success_url', `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`)
-  params.set('cancel_url', `${origin}/checkout`)
-  addShippingCountries(params)
-
-  items.forEach((item, i) => {
-    const currency = (item.currency || 'USD').toLowerCase()
-    params.set(`line_items[${i}][quantity]`, String(item.quantity))
-    params.set(`line_items[${i}][price_data][currency]`, currency)
-    params.set(`line_items[${i}][price_data][unit_amount]`, String(Math.round(item.price * 100)))
-    params.set(
-      `line_items[${i}][price_data][product_data][name]`,
-      `${item.title}${item.size !== 'One Size' ? ` — ${item.color}/${item.size}` : ` — ${item.color}`}`,
-    )
-    if (item.image?.startsWith('http')) {
-      params.set(`line_items[${i}][price_data][product_data][images][0]`, item.image)
-    }
-  })
+  params.set('amount', String(totals.totalCents))
+  params.set('currency', totals.currency.toLowerCase())
+  params.set('automatic_payment_methods[enabled]', 'true')
+  params.set('receipt_email', email)
+  params.set('metadata[order_id]', order.id)
+  params.set('metadata[shipping_rate_id]', rate.id)
+  params.set('metadata[tax_calculation_id]', taxCalculation.id)
+  params.set('metadata[checkout_flow]', 'payment_element')
+  params.set('shipping[name]', address.name)
+  params.set('shipping[address][line1]', address.address1)
+  params.set('shipping[address][city]', address.city)
+  params.set('shipping[address][country]', address.country)
+  if (address.address2) params.set('shipping[address][line2]', address.address2)
+  if (address.state) params.set('shipping[address][state]', address.state)
+  if (address.zip) params.set('shipping[address][postal_code]', address.zip)
+  if (address.phone) params.set('shipping[phone]', address.phone)
 
   let response: Response
   try {
-    response = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+    response = await fetch('https://api.stripe.com/v1/payment_intents', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${secretKey}`,
@@ -91,63 +178,52 @@ export async function POST(request: Request) {
       body: params.toString(),
     })
   } catch (error) {
-    console.error('[Checkout] Payment provider request failed:', error)
+    console.error('[Checkout] Could not reach Stripe:', error)
+    await updateOrderStatus(order.id, 'failed')
     return NextResponse.json({ message: 'Could not reach the payment provider.' }, { status: 502 })
   }
 
-  let session: unknown
+  let paymentIntent: unknown
   try {
-    session = await response.json()
+    paymentIntent = await response.json()
   } catch (error) {
-    console.error('[Checkout] Invalid payment provider response:', error)
-    return NextResponse.json({ message: 'Could not start checkout.' }, { status: 502 })
+    console.error('[Checkout] Stripe returned invalid JSON:', error)
+    await updateOrderStatus(order.id, 'failed')
+    return NextResponse.json({ message: 'Could not start payment.' }, { status: 502 })
   }
 
   if (!response.ok) {
-    const message =
-      isRecord(session) && isRecord(session.error) && typeof session.error.message === 'string'
-        ? session.error.message
-        : 'Could not start checkout.'
+    const message = isRecord(paymentIntent) && isRecord(paymentIntent.error) &&
+      typeof paymentIntent.error.message === 'string'
+      ? paymentIntent.error.message
+      : 'Could not start payment.'
+    await updateOrderStatus(order.id, 'failed')
     return NextResponse.json({ message }, { status: 502 })
   }
 
-  if (!isRecord(session) || typeof session.id !== 'string' || typeof session.url !== 'string') {
-    console.error('[Checkout] Payment provider response is missing session ID or URL.')
-    return NextResponse.json({ message: 'Could not start checkout.' }, { status: 502 })
+  if (
+    !isRecord(paymentIntent) ||
+    typeof paymentIntent.id !== 'string' ||
+    typeof paymentIntent.client_secret !== 'string'
+  ) {
+    console.error('[Checkout] Stripe response is missing payment intent details.')
+    await updateOrderStatus(order.id, 'failed')
+    return NextResponse.json({ message: 'Could not start payment.' }, { status: 502 })
   }
 
   try {
-    const order = await createOrder({
-      userId,
-      email,
-      status: 'pending',
-      items: items.map(item => ({
-        id: item.variantId,
-        productId: item.productId || '',
-        variantId: item.variantId,
-        title: item.title,
-        color: item.color,
-        size: item.size,
-        image: item.image || '',
-        price: item.price,
-        quantity: item.quantity,
-        currency: item.currency || 'USD'
-      })),
-      subtotal,
-      shippingCost,
-      tax,
-      total,
-      currency: 'USD',
-      shippingAddress: shippingAddress || undefined,
-      stripeSessionId: session.id,
-    })
-
-    console.log('[Checkout] Order created in database with ID:', order.id)
-    return NextResponse.json({ url: session.url })
+    await setOrderStripeSessionId(order.id, paymentIntent.id)
   } catch (error) {
-    console.error('[Checkout] Failed to save the pending order:', error)
-    return NextResponse.json({ message: 'Unable to save the order.' }, { status: 500 })
+    console.error('[Checkout] Could not link the Stripe payment to the order:', error)
+    return NextResponse.json({ message: 'Could not prepare your order for payment.' }, { status: 500 })
   }
+
+  return NextResponse.json({
+    clientSecret: paymentIntent.client_secret,
+    orderId: order.id,
+    totalCents: totals.totalCents,
+    currency: totals.currency,
+  })
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

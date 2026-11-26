@@ -39,6 +39,8 @@ To promote the intended existing account, set `ADMIN_SETUP_TOKEN` in the Worker,
 
 Configure Stripe's production webhook endpoint as `https://www.masidy.store/api/webhooks/stripe`; store its signing secret in `STRIPE_WEBHOOK_SECRET`. The endpoint verifies Stripe's timestamped HMAC signature before processing events.
 
+Checkout uses an on-page Stripe Payment Element. The server verifies current Printful product prices, quotes shipping from the submitted address, and creates a Stripe Tax calculation for each shipping option. Stripe Tax uses the account's default product tax code and calculates tax only in jurisdictions with active registrations; configure the default tax code and registrations in Stripe before accepting live orders. Unregistered destinations receive no Stripe-calculated tax. After a successful payment, the webhook records the tax transaction, so subscribe it to `payment_intent.succeeded` and `payment_intent.payment_failed` (the Checkout Session events remain for legacy sessions). Restricted Stripe API keys must allow Tax Calculation and Tax Transaction writes in addition to PaymentIntents.
+
 ## Data cutover
 
 An initial read-only snapshot was copied from PostgreSQL into EU D1: 2 users, 2 sessions, 0 password-reset tokens, 3 orders, and 0 email logs. Password hashes and session tokens were preserved; order JSON and timestamps were converted for SQLite. The source PostgreSQL database was not changed. The D1 copy passed row-count, order-JSON, and foreign-key checks. Because the old store may still receive changes, take and verify one final data sync immediately before cutover.

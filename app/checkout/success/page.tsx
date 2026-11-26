@@ -1,61 +1,95 @@
 import { Suspense } from 'react'
 import Link from 'next/link'
-import { CheckCircle, Package, Mail, ArrowRight } from 'lucide-react'
+import { CheckCircle, Package, Mail, ArrowRight, XCircle } from 'lucide-react'
 import { getCurrentUser } from '@/lib/auth/session'
+import { ClearCartOnSuccess } from '@/lib/checkout/clear-cart-on-success'
 
 async function SuccessContent({
   searchParams,
 }: {
-  searchParams: { session_id?: string }
+  searchParams: {
+    session_id?: string
+    order_id?: string
+    payment_intent?: string
+    redirect_status?: string
+    payment_status?: string
+  }
 }) {
   const user = await getCurrentUser()
-  const sessionId = searchParams.session_id
+  const failed = searchParams.redirect_status === 'failed'
+  const processing =
+    searchParams.redirect_status === 'processing' || searchParams.payment_status === 'processing'
+  const orderReference = searchParams.order_id || searchParams.payment_intent || searchParams.session_id
+  const clearCart = Boolean(
+    searchParams.redirect_status === 'succeeded' ||
+    searchParams.redirect_status === 'processing' ||
+    searchParams.payment_status ||
+    searchParams.session_id,
+  )
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12 md:px-6 md:py-20">
+      <ClearCartOnSuccess enabled={clearCart} />
       <div className="text-center">
         {/* Success Icon */}
-        <div className="mx-auto mb-6 flex size-20 items-center justify-center rounded-full bg-green-100">
-          <CheckCircle className="size-12 text-green-600" />
+        <div className={`mx-auto mb-6 flex size-20 items-center justify-center rounded-full ${failed ? 'bg-red-100' : 'bg-green-100'}`}>
+          {failed
+            ? <XCircle className="size-12 text-red-600" />
+            : <CheckCircle className="size-12 text-green-600" />}
         </div>
 
         {/* Thank You Message */}
-        <h1 className="mb-4 text-3xl font-bold md:text-4xl">Order Confirmed!</h1>
+        <h1 className="mb-4 text-3xl font-bold md:text-4xl">
+          {failed ? 'Payment not completed' : processing ? 'Payment processing' : 'Order Confirmed!'}
+        </h1>
         <p className="mb-8 text-lg text-muted-foreground">
-          Thank you for your order. We've received your payment and will start processing your
-          order right away.
+          {failed
+            ? 'Your payment was not completed. Please return to checkout and try another payment method.'
+            : processing
+              ? 'Your payment is processing. We will email you when the order is confirmed.'
+              : 'Thank you for your order. We have received your payment and will start processing your order.'}
         </p>
 
         {/* Order Info */}
-        {sessionId && (
+        {orderReference && !failed && (
           <div className="mb-8 rounded-lg border border-border bg-secondary/20 p-6">
             <p className="text-sm text-muted-foreground">Order Reference</p>
-            <p className="mt-1 font-mono text-sm font-semibold">{sessionId.slice(-12)}</p>
+            <p className="mt-1 font-mono text-sm font-semibold">{orderReference.slice(-12)}</p>
           </div>
         )}
 
         {/* What's Next */}
-        <div className="mb-10 grid gap-6 text-left md:grid-cols-2">
-          <div className="rounded-lg border border-border bg-background p-6">
-            <Mail className="mb-3 size-8 text-accent" />
-            <h3 className="mb-2 font-semibold">Confirmation Email</h3>
-            <p className="text-sm text-muted-foreground">
-              We've sent a confirmation email with your order details and receipt.
-            </p>
-          </div>
+        {!failed && !processing && (
+          <div className="mb-10 grid gap-6 text-left md:grid-cols-2">
+            <div className="rounded-lg border border-border bg-background p-6">
+              <Mail className="mb-3 size-8 text-accent" />
+              <h3 className="mb-2 font-semibold">Confirmation Email</h3>
+              <p className="text-sm text-muted-foreground">
+                We&apos;ll send a confirmation email with your order details and receipt.
+              </p>
+            </div>
 
-          <div className="rounded-lg border border-border bg-background p-6">
-            <Package className="mb-3 size-8 text-accent" />
-            <h3 className="mb-2 font-semibold">Production & Shipping</h3>
-            <p className="text-sm text-muted-foreground">
-              Your items will be processed and shipped within 3-7 business days.
-            </p>
+            <div className="rounded-lg border border-border bg-background p-6">
+              <Package className="mb-3 size-8 text-accent" />
+              <h3 className="mb-2 font-semibold">Production & Shipping</h3>
+              <p className="text-sm text-muted-foreground">
+                Your items will be processed and shipped within 3-7 business days.
+              </p>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Action Buttons */}
         <div className="flex flex-col gap-4 sm:flex-row sm:justify-center">
-          {user ? (
+          {failed ? (
+            <Link
+              href="/checkout"
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-accent px-6 py-3 font-semibold text-accent-foreground hover:bg-accent/90"
+            >
+              Return to Checkout
+              <ArrowRight className="size-4" />
+            </Link>
+          ) : user ? (
             <Link
               href="/account/orders"
               className="inline-flex items-center justify-center gap-2 rounded-md bg-accent px-6 py-3 font-semibold text-accent-foreground hover:bg-accent/90"
@@ -109,7 +143,13 @@ async function SuccessContent({
 export default function CheckoutSuccessPage({
   searchParams,
 }: {
-  searchParams: { session_id?: string }
+  searchParams: {
+    session_id?: string
+    order_id?: string
+    payment_intent?: string
+    redirect_status?: string
+    payment_status?: string
+  }
 }) {
   return (
     <Suspense

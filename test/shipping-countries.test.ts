@@ -1,22 +1,15 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { addShippingCountries } from '../lib/checkout/shipping-countries'
+import { isPrintfulShippingCountry, PRINTFUL_SHIPPING_COUNTRIES } from '../lib/checkout/shipping-countries'
 
-test('Stripe Checkout allows international Printful destinations and blocks restricted countries', () => {
-  const params = new URLSearchParams()
-  addShippingCountries(params)
-
-  const countries = Array.from(params.entries())
-    .filter(([key]) => key.startsWith('shipping_address_collection[allowed_countries]'))
-    .map(([, country]) => country)
-
-  assert.ok(countries.includes('EG'))
-  assert.ok(countries.includes('IT'))
-  assert.ok(countries.includes('BR'))
-  assert.ok(countries.includes('US'))
-  assert.ok(countries.includes('CA'))
-  assert.ok(countries.includes('GB'))
+test('shipping country list includes international destinations and excludes restricted countries', () => {
+  assert.ok(PRINTFUL_SHIPPING_COUNTRIES.includes('EG'))
+  assert.ok(PRINTFUL_SHIPPING_COUNTRIES.includes('IT'))
+  assert.ok(PRINTFUL_SHIPPING_COUNTRIES.includes('BR'))
+  assert.ok(PRINTFUL_SHIPPING_COUNTRIES.includes('US'))
+  assert.ok(PRINTFUL_SHIPPING_COUNTRIES.includes('CA'))
+  assert.ok(PRINTFUL_SHIPPING_COUNTRIES.includes('GB'))
   for (const restricted of ['BY', 'CU', 'EC', 'IR', 'KP', 'RU', 'SY']) {
-    assert.ok(!countries.includes(restricted), `${restricted} must not be allowed`)
+    assert.ok(!isPrintfulShippingCountry(restricted), `${restricted} must not be allowed`)
   }
 })

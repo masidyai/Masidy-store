@@ -1,4 +1,4 @@
-const printfulShippingCountries = [
+export const PRINTFUL_SHIPPING_COUNTRIES = [
   'AC', 'AD', 'AE', 'AF', 'AG', 'AI', 'AL', 'AM', 'AO', 'AQ', 'AR', 'AT', 'AU', 'AW', 'AX',
   'AZ', 'BA', 'BB', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BL', 'BM', 'BN', 'BO', 'BQ',
   'BR', 'BS', 'BT', 'BV', 'BW', 'BZ', 'CA', 'CD', 'CF', 'CG', 'CH', 'CI', 'CK', 'CL', 'CM',
@@ -17,8 +17,6 @@ const printfulShippingCountries = [
   'WF', 'WS', 'XK', 'YE', 'YT', 'ZA', 'ZM', 'ZW',
 ] as const
 
-export function addShippingCountries(params: URLSearchParams): void {
-  printfulShippingCountries.forEach((country, index) => {
-    params.set(`shipping_address_collection[allowed_countries][${index}]`, country)
-  })
+export function isPrintfulShippingCountry(code: string): code is (typeof PRINTFUL_SHIPPING_COUNTRIES)[number] {
+  return PRINTFUL_SHIPPING_COUNTRIES.some((country) => country === code)
 }
