@@ -1,12 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import { loadStripe } from '@stripe/stripe-js'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { ArrowLeft, Loader2, Lock } from 'lucide-react'
+import { ArrowLeft, Check, CreditCard, Loader2, Lock, MapPin } from 'lucide-react'
 import { useCart } from '@/lib/cart-context'
 import { PRINTFUL_SHIPPING_COUNTRIES } from '@/lib/checkout/shipping-countries'
 import { fromMinorUnits, toMinorUnits } from '@/lib/checkout/money'
@@ -42,6 +42,8 @@ const countryNames = new Intl.DisplayNames(['en'], { type: 'region' })
 const countryOptions = PRINTFUL_SHIPPING_COUNTRIES
   .map((code) => ({ code, name: countryNames.of(code) || code }))
   .sort((a, b) => a.name.localeCompare(b.name))
+const checkoutInputClassName =
+  'min-h-12 w-full rounded-md border border-border bg-background px-4 py-3 text-base focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20 sm:text-sm'
 
 export default function CheckoutPage() {
   const router = useRouter()
@@ -56,6 +58,8 @@ export default function CheckoutPage() {
   const [stripePromise, setStripePromise] = useState<ReturnType<typeof loadStripe> | null>(null)
   const [paymentTotalCents, setPaymentTotalCents] = useState<number | null>(null)
   const [paymentCurrency, setPaymentCurrency] = useState('USD')
+  const shippingFormRef = useRef<HTMLFormElement>(null)
+  const paymentSectionRef = useRef<HTMLElement>(null)
 
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
@@ -129,6 +133,15 @@ export default function CheckoutPage() {
     if (items.length === 0) router.push('/search')
   }, [items, router])
 
+  const selectedRate = quote?.rates.find((rate) => rate.id === selectedRateId)
+  const isPaymentStep = Boolean(clientSecret && stripePromise && paymentTotalCents !== null)
+
+  useEffect(() => {
+    if (isPaymentStep) {
+      paymentSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [isPaymentStep])
+
   if (items.length === 0) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-12 text-center">
@@ -136,8 +149,6 @@ export default function CheckoutPage() {
       </div>
     )
   }
-
-  const selectedRate = quote?.rates.find((rate) => rate.id === selectedRateId)
 
   async function handleShippingQuote(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -202,6 +213,13 @@ export default function CheckoutPage() {
     }
   }
 
+  function returnToShipping() {
+    setClientSecret('')
+    setOrderId('')
+    setPaymentTotalCents(null)
+    setError('')
+  }
+
   const displayedItems = quote?.items ?? items.map((item) => ({
     id: item.variantId,
     title: item.title,
@@ -216,22 +234,117 @@ export default function CheckoutPage() {
     : subtotal
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 md:px-6 md:py-12">
+    <div className="mx-auto max-w-7xl px-4 pb-32 pt-6 sm:py-8 md:px-6 md:py-12">
       <Link
         href="/search"
-        className="mb-6 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-accent"
+        className="mb-5 inline-flex min-h-10 items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-accent sm:mb-6"
       >
         <ArrowLeft className="size-4" />
         Continue Shopping
       </Link>
 
-      <h1 className="mb-8 text-3xl font-bold">Checkout</h1>
+      <h1 className="mb-5 text-3xl font-bold sm:mb-6">Checkout</h1>
 
-      <div className="grid gap-8 lg:grid-cols-2">
-        <div>
-          <form onSubmit={handleShippingQuote} className="space-y-6">
+      <ol aria-label="Checkout progress" className="mb-7 flex max-w-xl items-center gap-3 sm:mb-10">
+        <li
+          aria-current={isPaymentStep ? undefined : 'step'}
+          className={`flex min-w-0 items-center gap-2.5 ${isPaymentStep ? 'text-muted-foreground' : 'text-foreground'}`}
+        >
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-semibold text-accent-foreground">
+            {isPaymentStep ? <Check className="size-4" /> : '1'}
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold">Delivery</span>
+            <span className="hidden text-xs text-muted-foreground sm:block">Address and shipping</span>
+          </span>
+        </li>
+        <li aria-hidden="true" className="h-px min-w-5 flex-1 bg-border" />
+        <li
+          aria-current={isPaymentStep ? 'step' : undefined}
+          className={`flex min-w-0 items-center gap-2.5 ${isPaymentStep ? 'text-foreground' : 'text-muted-foreground'}`}
+        >
+          <span className={`flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${isPaymentStep ? 'bg-accent text-accent-foreground' : 'border border-border bg-background'}`}>
+            2
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold">Payment</span>
+            <span className="hidden text-xs text-muted-foreground sm:block">Secure checkout</span>
+          </span>
+        </li>
+      </ol>
+
+      <div className="grid items-start gap-6 lg:grid-cols-2 lg:gap-8">
+        <aside className="order-1 lg:order-2 lg:sticky lg:top-24 lg:self-start">
+          <div className="rounded-xl border border-border bg-secondary/20 p-4 sm:p-6">
+            <h2 className="mb-4 text-lg font-semibold sm:text-xl">Order Summary</h2>
+            <div className="mb-4 space-y-3">
+              {displayedItems.map((item) => (
+                <div key={item.id} className="flex gap-3 sm:gap-4">
+                  <div className="relative size-14 shrink-0 overflow-hidden rounded-md border border-border bg-background sm:size-16">
+                    <Image
+                      src={items.find((cartItem) => cartItem.variantId === item.id)?.image || '/placeholder.svg'}
+                      alt={item.title}
+                      fill
+                      sizes="64px"
+                      className="object-cover"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{item.title}</p>
+                    <p className="text-xs text-muted-foreground">{item.color} / {item.size}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Qty: {item.quantity}</p>
+                  </div>
+                  <p className="shrink-0 text-sm font-semibold">
+                    {formatPrice(fromMinorUnits(item.priceCents, displayedCurrency) * item.quantity, displayedCurrency)}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-2 border-t border-border pt-3 sm:pt-4">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span>{formatPrice(displayedSubtotal, displayedCurrency)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Shipping</span>
+                <span>
+                  {selectedRate
+                    ? formatPrice(fromMinorUnits(selectedRate.amountCents, selectedRate.currency), selectedRate.currency)
+                    : 'Calculated for your address'}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Tax</span>
+                <span>
+                  {quote && selectedRate
+                    ? formatPrice(
+                      fromMinorUnits(selectedRate.taxCents, quote.currency),
+                      quote.currency,
+                    )
+                    : 'Calculated after address'}
+                </span>
+              </div>
+              <div className="flex justify-between border-t border-border pt-2 text-base font-semibold sm:text-lg">
+                <span>Total</span>
+                <span>
+                  {selectedRate
+                    ? formatPrice(fromMinorUnits(selectedRate.totalCents, selectedRate.currency), selectedRate.currency)
+                    : formatPrice(displayedSubtotal, displayedCurrency)}
+                </span>
+              </div>
+              {!selectedRate && (
+                <p className="text-xs text-muted-foreground">Shipping and tax are confirmed before payment.</p>
+              )}
+            </div>
+          </div>
+        </aside>
+
+        <div className="order-2 min-w-0 lg:order-1">
+          {!isPaymentStep ? (
+          <form ref={shippingFormRef} onSubmit={handleShippingQuote} className="space-y-6">
             <section>
-              <h2 className="mb-4 text-xl font-semibold">Contact Information</h2>
+              <h2 className="mb-4 text-lg font-semibold sm:text-xl">Contact Information</h2>
               <label htmlFor="email" className="mb-2 block text-sm font-medium">
                 Email <span className="text-red-500">*</span>
               </label>
@@ -243,7 +356,7 @@ export default function CheckoutPage() {
                 placeholder="your@email.com"
                 required
                 disabled={!!user}
-                className="w-full rounded-md border border-border bg-background px-4 py-2.5 text-sm focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20 disabled:opacity-50"
+                className={`${checkoutInputClassName} disabled:opacity-50`}
               />
               <p className="mt-1 text-xs text-muted-foreground">
                 We&apos;ll send your order confirmation here
@@ -251,7 +364,7 @@ export default function CheckoutPage() {
             </section>
 
             <section>
-              <h2 className="mb-4 text-xl font-semibold">Shipping Address</h2>
+              <h2 className="mb-4 text-lg font-semibold sm:text-xl">Shipping Address</h2>
               <div className="space-y-4">
                 <div>
                   <label htmlFor="name" className="mb-2 block text-sm font-medium">
@@ -264,7 +377,7 @@ export default function CheckoutPage() {
                     onChange={(event) => setName(event.target.value)}
                     required
                     autoComplete="name"
-                    className="w-full rounded-md border border-border bg-background px-4 py-2.5 text-sm focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                    className={checkoutInputClassName}
                   />
                 </div>
 
@@ -279,7 +392,7 @@ export default function CheckoutPage() {
                     onChange={(event) => setAddress1(event.target.value)}
                     required
                     autoComplete="address-line1"
-                    className="w-full rounded-md border border-border bg-background px-4 py-2.5 text-sm focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                    className={checkoutInputClassName}
                   />
                 </div>
 
@@ -293,7 +406,7 @@ export default function CheckoutPage() {
                     value={address2}
                     onChange={(event) => setAddress2(event.target.value)}
                     autoComplete="address-line2"
-                    className="w-full rounded-md border border-border bg-background px-4 py-2.5 text-sm focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                    className={checkoutInputClassName}
                   />
                 </div>
 
@@ -309,7 +422,7 @@ export default function CheckoutPage() {
                       onChange={(event) => setCity(event.target.value)}
                       required
                       autoComplete="address-level2"
-                      className="w-full rounded-md border border-border bg-background px-4 py-2.5 text-sm focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                      className={checkoutInputClassName}
                     />
                   </div>
                   <div>
@@ -323,7 +436,7 @@ export default function CheckoutPage() {
                       onChange={(event) => setState(event.target.value)}
                       placeholder="e.g. NY"
                       autoComplete="address-level1"
-                      className="w-full rounded-md border border-border bg-background px-4 py-2.5 text-sm focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                      className={checkoutInputClassName}
                     />
                   </div>
                 </div>
@@ -339,7 +452,7 @@ export default function CheckoutPage() {
                       value={zip}
                       onChange={(event) => setZip(event.target.value)}
                       autoComplete="postal-code"
-                      className="w-full rounded-md border border-border bg-background px-4 py-2.5 text-sm focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                      className={checkoutInputClassName}
                     />
                   </div>
                   <div>
@@ -352,7 +465,7 @@ export default function CheckoutPage() {
                       onChange={(event) => setCountry(event.target.value)}
                       required
                       autoComplete="country"
-                      className="w-full rounded-md border border-border bg-background px-4 py-2.5 text-sm focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                      className={checkoutInputClassName}
                     >
                       {countryOptions.map((option) => (
                         <option key={option.code} value={option.code}>{option.name}</option>
@@ -371,7 +484,7 @@ export default function CheckoutPage() {
                     value={phone}
                     onChange={(event) => setPhone(event.target.value)}
                     autoComplete="tel"
-                    className="w-full rounded-md border border-border bg-background px-4 py-2.5 text-sm focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                    className={checkoutInputClassName}
                   />
                 </div>
               </div>
@@ -410,9 +523,9 @@ export default function CheckoutPage() {
                   type="button"
                   onClick={handlePreparePayment}
                   disabled={loading || !selectedRate || !stripePromise}
-                  className="flex w-full items-center justify-center gap-2 rounded-md bg-accent py-3.5 font-semibold text-accent-foreground transition-colors hover:bg-accent/90 disabled:opacity-50"
+                  className="hidden w-full items-center justify-center gap-2 rounded-md bg-accent py-3.5 font-semibold text-accent-foreground transition-colors hover:bg-accent/90 disabled:opacity-50 sm:flex"
                 >
-                  {loading ? <Loader2 className="size-5 animate-spin" /> : <Lock className="size-5" />}
+                  {loading ? <Loader2 className="size-5 animate-spin" /> : <CreditCard className="size-5" />}
                   Continue to secure payment
                 </button>
               </fieldset>
@@ -422,7 +535,7 @@ export default function CheckoutPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex w-full items-center justify-center gap-2 rounded-md bg-accent py-3.5 font-semibold text-accent-foreground transition-colors hover:bg-accent/90 disabled:opacity-50"
+                className="hidden w-full items-center justify-center gap-2 rounded-md bg-accent py-3.5 font-semibold text-accent-foreground transition-colors hover:bg-accent/90 disabled:opacity-50 sm:flex"
               >
                 {loading ? <Loader2 className="size-5 animate-spin" /> : null}
                 {loading ? 'Calculating shipping...' : 'Calculate shipping'}
@@ -435,10 +548,30 @@ export default function CheckoutPage() {
               </div>
             )}
           </form>
-
-          {clientSecret && stripePromise && paymentTotalCents !== null && (
-            <div className="mt-6 rounded-lg border border-border bg-background p-6">
-              <h2 className="mb-4 text-xl font-semibold">Payment</h2>
+          ) : (
+            <section
+              ref={paymentSectionRef}
+              aria-labelledby="payment-title"
+              className="scroll-mt-24 rounded-xl border border-border bg-background p-4 sm:p-6"
+            >
+              <div className="mb-5 flex items-start justify-between gap-4">
+                <div>
+                  <h2 id="payment-title" className="text-lg font-semibold sm:text-xl">Payment</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Your delivery and total are confirmed. Choose how you&apos;d like to pay.
+                  </p>
+                </div>
+                <Lock className="mt-1 size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              </div>
+              <div className="mb-5 rounded-lg bg-secondary/40 p-3 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Paying</span>
+                  <span className="font-semibold">
+                    {formatPrice(fromMinorUnits(paymentTotalCents ?? 0, paymentCurrency), paymentCurrency)}
+                  </span>
+                </div>
+                <p className="mt-1 truncate text-xs text-muted-foreground">{email}</p>
+              </div>
               <Elements
                 key={clientSecret}
                 stripe={stripePromise}
@@ -456,78 +589,61 @@ export default function CheckoutPage() {
                   }}
                 />
               </Elements>
-            </div>
+              <button
+                type="button"
+                onClick={returnToShipping}
+                className="mt-4 inline-flex min-h-10 items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <ArrowLeft className="size-4" />
+                Edit delivery details
+              </button>
+            </section>
           )}
           <p className="mt-4 text-center text-xs text-muted-foreground">
+            <Lock className="mr-1 inline size-3" aria-hidden="true" />
             Secure payment powered by Stripe
           </p>
         </div>
+      </div>
 
-        <div>
-          <div className="rounded-lg border border-border bg-secondary/20 p-6">
-            <h2 className="mb-4 text-xl font-semibold">Order Summary</h2>
-            <div className="mb-4 space-y-3">
-              {displayedItems.map((item) => (
-                <div key={item.id} className="flex gap-4">
-                  <div className="relative size-16 shrink-0 overflow-hidden rounded border border-border">
-                    <Image
-                      src={items.find((cartItem) => cartItem.variantId === item.id)?.image || '/placeholder.svg'}
-                      alt={item.title}
-                      fill
-                      sizes="64px"
-                      className="object-cover"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{item.title}</p>
-                    <p className="text-xs text-muted-foreground">{item.color} / {item.size}</p>
-                    <p className="mt-1 text-sm">Qty: {item.quantity}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-semibold">
-                      {formatPrice(fromMinorUnits(item.priceCents, displayedCurrency) * item.quantity, displayedCurrency)}
-                    </p>
-                  </div>
-                </div>
-              ))}
+      {!isPaymentStep && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(0,0,0,0.08)] backdrop-blur sm:hidden">
+          <div className="mx-auto flex max-w-xl items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-muted-foreground">{selectedRate ? 'Total' : 'Subtotal'}</p>
+              <p className="truncate text-base font-semibold">
+                {formatPrice(
+                  selectedRate
+                    ? fromMinorUnits(selectedRate.totalCents, selectedRate.currency)
+                    : displayedSubtotal,
+                  selectedRate?.currency ?? displayedCurrency,
+                )}
+              </p>
             </div>
-
-            <div className="space-y-2 border-t border-border pt-4">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span>{formatPrice(displayedSubtotal, displayedCurrency)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Shipping</span>
-                <span>
-                  {selectedRate
-                    ? formatPrice(fromMinorUnits(selectedRate.amountCents, selectedRate.currency), selectedRate.currency)
-                    : 'Calculated for your address'}
-                </span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Tax</span>
-                <span>
-                  {quote && selectedRate
-                    ? formatPrice(
-                      fromMinorUnits(selectedRate.taxCents, quote.currency),
-                      quote.currency,
-                    )
-                    : 'Calculated after address'}
-                </span>
-              </div>
-              <div className="flex justify-between border-t border-border pt-2 text-lg font-semibold">
-                <span>Total</span>
-                <span>
-                  {selectedRate
-                    ? formatPrice(fromMinorUnits(selectedRate.totalCents, selectedRate.currency), selectedRate.currency)
-                    : '—'}
-                </span>
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (quote) {
+                  void handlePreparePayment()
+                } else {
+                  shippingFormRef.current?.requestSubmit()
+                }
+              }}
+              disabled={loading || Boolean(quote && (!selectedRate || !stripePromise))}
+              className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-md bg-accent px-4 text-sm font-semibold text-accent-foreground transition-colors hover:bg-accent/90 disabled:opacity-50"
+            >
+              {loading ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : quote ? (
+                <CreditCard className="size-4" />
+              ) : (
+                <MapPin className="size-4" />
+              )}
+              {loading ? 'Please wait...' : quote ? 'Continue to payment' : 'Calculate shipping'}
+            </button>
           </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
