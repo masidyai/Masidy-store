@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { BarChart3, Package, ShoppingCart, Users } from 'lucide-react'
+import { BarChart3, ClipboardCheck, Package, ShoppingCart, Users } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 interface DashboardStats {
@@ -154,6 +154,15 @@ export default function AdminDashboard() {
           <Users className="mb-4 size-8 text-muted-foreground" />
           <h3 className="text-lg font-semibold">Customers</h3>
           <p className="mt-2 text-sm text-muted-foreground">View customer information</p>
+        </Link>
+
+        <Link
+          href="/admin/marketplace"
+          className="rounded-lg border border-border bg-background p-6 transition-colors hover:bg-secondary/40"
+        >
+          <ClipboardCheck className="mb-4 size-8 text-muted-foreground" />
+          <h3 className="text-lg font-semibold">Marketplace reviews</h3>
+          <p className="mt-2 text-sm text-muted-foreground">Review reseller and seller applications and seller listings</p>
         </Link>
       </div>
     </div>

@@ -7,6 +7,8 @@ export interface AuthUser {
   email: string
   name: string | null
   isAdmin?: boolean
+  isReseller?: boolean
+  isSeller?: boolean
   createdAt: string
 }
 
@@ -45,9 +47,20 @@ export async function authenticateUser(email: string, password: string) {
     name: string | null
     password_hash: string
     is_admin: boolean | number
+    is_reseller: boolean | number
+    is_seller: boolean | number
     created_at: string
   }>`
-    SELECT id, email, name, password_hash, is_admin, created_at
+    SELECT id, email, name, password_hash, is_admin,
+      EXISTS (
+        SELECT 1 FROM marketplace_applications a
+        WHERE a.user_id = users.id AND a.role = 'reseller' AND a.status = 'approved'
+      ) AS is_reseller,
+      EXISTS (
+        SELECT 1 FROM marketplace_applications a
+        WHERE a.user_id = users.id AND a.role = 'seller' AND a.status = 'approved'
+      ) AS is_seller,
+      created_at
     FROM users
     WHERE email = ${normalizedEmail}
   `
@@ -60,6 +73,8 @@ export async function authenticateUser(email: string, password: string) {
     email: row.email,
     name: row.name,
     isAdmin: Boolean(row.is_admin),
+    isReseller: Boolean(row.is_reseller),
+    isSeller: Boolean(row.is_seller),
     createdAt: row.created_at,
   } satisfies AuthUser
 }
@@ -85,9 +100,20 @@ export async function getUserFromSession(token: string | undefined) {
     email: string
     name: string | null
     is_admin: boolean | number
+    is_reseller: boolean | number
+    is_seller: boolean | number
     created_at: string
   }>`
-    SELECT u.id, u.email, u.name, u.is_admin, u.created_at
+    SELECT u.id, u.email, u.name, u.is_admin,
+      EXISTS (
+        SELECT 1 FROM marketplace_applications a
+        WHERE a.user_id = u.id AND a.role = 'reseller' AND a.status = 'approved'
+      ) AS is_reseller,
+      EXISTS (
+        SELECT 1 FROM marketplace_applications a
+        WHERE a.user_id = u.id AND a.role = 'seller' AND a.status = 'approved'
+      ) AS is_seller,
+      u.created_at
     FROM sessions s
     JOIN users u ON u.id = s.user_id
     WHERE s.token = ${token} AND julianday(s.expires_at) > julianday('now')
@@ -101,6 +127,8 @@ export async function getUserFromSession(token: string | undefined) {
     email: row.email,
     name: row.name,
     isAdmin: Boolean(row.is_admin),
+    isReseller: Boolean(row.is_reseller),
+    isSeller: Boolean(row.is_seller),
     createdAt: row.created_at,
   } satisfies AuthUser
 }

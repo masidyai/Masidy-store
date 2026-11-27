@@ -1,4 +1,4 @@
-import { bindings, defineConfig, defineWorker } from "cf/config";
+import { bindings, defineConfig, defineWorker, triggers } from "cf/config";
 
 export default defineConfig(({ isPreview, mode }) => {
   const isStaging = isPreview || mode === "development" || mode === "preview" || mode === "staging";
@@ -6,11 +6,12 @@ export default defineConfig(({ isPreview, mode }) => {
   return {
     worker: defineWorker({
       name: isStaging ? "masidy-store-preview" : "masidy-store1",
-      entrypoint: "vinext/server/fetch-handler",
+      entrypoint: "worker.ts",
       compatibilityDate: "2026-11-25",
       compatibilityFlags: ["nodejs_compat"],
       workersDev: isStaging,
       previewUrls: isStaging,
+      triggers: isStaging ? [] : [triggers.scheduled({ schedule: "0 3 * * *" })],
       observability: {
         enabled: true,
         logs: { enabled: true, invocationLogs: true },
@@ -47,6 +48,7 @@ export default defineConfig(({ isPreview, mode }) => {
           isStaging ? "http://localhost:3001" : "https://www.masidy.store",
         ),
         USE_PAYMENT_LINKS: bindings.text(String(false)),
+        MARKETPLACE_CHECKOUT_ENABLED: bindings.text("false"),
         PRINTFUL_API_TOKEN: bindings.secret(),
         PRINTFUL_STORE_ID: bindings.text("19117823"),
         STRIPE_SECRET_KEY: bindings.secret(),

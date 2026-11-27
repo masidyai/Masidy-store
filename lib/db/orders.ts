@@ -28,6 +28,9 @@ export interface Order {
   shippingStatus?: 'pending' | 'in_transit' | 'delivered' | 'returned'
   trackingNumber?: string
   trackingUrl?: string
+  printfulCostMinor?: number
+  referrerUserId?: string
+  resellerRateBps?: number
   createdAt: string
   updatedAt: string
 }
@@ -53,13 +56,15 @@ export async function createOrder(order: Omit<Order, 'id' | 'createdAt' | 'updat
     INSERT INTO orders (
       id, user_id, stripe_session_id, printful_order_id, email, status,
       items, subtotal, shipping_cost, tax, total, currency,
-      shipping_address, created_at, updated_at
+      shipping_address, printful_cost_minor, referrer_user_id, reseller_rate_bps,
+      created_at, updated_at
     ) VALUES (
       ${id}, ${order.userId},
       ${order.stripeSessionId || null}, ${order.printfulOrderId || null}, ${order.email}, ${order.status},
       ${JSON.stringify(order.items)}, ${order.subtotal}, ${order.shippingCost},
       ${order.tax}, ${order.total}, ${order.currency},
       ${order.shippingAddress ? JSON.stringify(order.shippingAddress) : null},
+      ${order.printfulCostMinor ?? 0}, ${order.referrerUserId ?? null}, ${order.resellerRateBps ?? null},
       ${now}, ${now}
     )
     RETURNING *

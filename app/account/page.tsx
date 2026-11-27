@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowRight, LogOut, Settings, ShoppingBag } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { MarketplacePrograms } from '@/components/account/marketplace-programs'
 
 interface User {
   id: string
@@ -126,6 +127,8 @@ export default function AccountPage() {
           </div>
         </div>
       </div>
+
+      <MarketplacePrograms />
 
       {/* Additional Info Section */}
       <div className="mt-8 rounded-lg border border-border bg-secondary/20 p-6">

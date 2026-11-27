@@ -4,18 +4,21 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { Menu, Search, ShoppingBag, UserRound, X } from 'lucide-react'
+import { Menu, Search, ShoppingBag, ShoppingBasket, UserRound, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCart } from '@/lib/cart-context'
+import { useMarketplaceCart } from '@/components/marketplace/cart-provider'
 
 const LINKS = [
   { href: '/search', label: 'Shop All' },
   { href: '/search/apparel', label: 'Apparel' },
   { href: '/search/accessories', label: 'Accessories' },
+  { href: '/marketplace', label: 'Independent sellers' },
 ]
 
 export function Navbar() {
   const { totalQuantity, openCart } = useCart()
+  const { itemCount: marketplaceItemCount } = useMarketplaceCart()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [user, setUser] = useState<{ email: string; name?: string | null } | null>(null)
   const pathname = usePathname()
@@ -116,6 +119,18 @@ export function Navbar() {
               </span>
             )}
           </button>
+          <Link
+            href="/marketplace/cart"
+            className="relative inline-flex size-9 items-center justify-center rounded-md text-foreground hover:bg-muted"
+            aria-label={`Marketplace bag, ${marketplaceItemCount} items`}
+          >
+            <ShoppingBasket className="size-5" />
+            {marketplaceItemCount > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex size-4 items-center justify-center rounded-full bg-accent text-[10px] font-semibold text-accent-foreground">
+                {marketplaceItemCount}
+              </span>
+            )}
+          </Link>
           {user ? (
             <div className="flex items-center gap-2">
               <Link

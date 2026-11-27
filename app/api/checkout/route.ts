@@ -15,6 +15,8 @@ import {
 } from '@/lib/checkout/printful'
 import { isPrintfulShippingCountry } from '@/lib/checkout/shipping-countries'
 import { createOrder, setOrderStripeSessionId, updateOrderStatus } from '@/lib/db/orders'
+import { getMarketplaceCommissionRatesBps } from '@/lib/marketplace/db'
+import { getActiveResellerReferral } from '@/lib/marketplace/referrals'
 
 export async function GET() {
   const publishableKey = env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
@@ -75,6 +77,7 @@ export async function POST(request: Request) {
   let pricedItems: PricedCheckoutItem[]
   let rate: PrintfulShippingRate | undefined
   let totals: ReturnType<typeof getPrintfulCustomerTotals> | undefined
+  let printfulCostMinor = 0
   let itemPrices: number[] = []
   try {
     pricedItems = await getPricedCheckoutItems(items, printfulToken, env.PRINTFUL_STORE_ID)
@@ -95,6 +98,7 @@ export async function POST(request: Request) {
       )
       const quantity = pricedItems.reduce((sum, item) => sum + item.quantity, 0)
       totals = getPrintfulCustomerTotals(estimate, quantity)
+      printfulCostMinor = estimate.totalCents
       itemPrices = await Promise.all(
         pricedItems.map((item) =>
           getPrintfulItemPrice(item, address, printfulToken, env.PRINTFUL_STORE_ID, rate.id),
@@ -125,8 +129,16 @@ export async function POST(request: Request) {
   let order
   try {
     const user = await getCurrentUser()
+    const referralCandidate = await getActiveResellerReferral()
+    const referral = referralCandidate?.userId === user?.id ? null : referralCandidate
+    const commissionSettings = referral ? await getMarketplaceCommissionRatesBps() : null
+    if (referral && commissionSettings?.reseller_rate_bps == null) {
+      return NextResponse.json({ message: 'Reseller commissions are not configured yet.' }, { status: 503 })
+    }
     order = await createOrder({
       userId: user?.id || `guest_${crypto.randomUUID()}`,
+      referrerUserId: referral?.userId,
+      resellerRateBps: commissionSettings?.reseller_rate_bps ?? undefined,
       email,
       status: 'pending',
       items: pricedItems.map(({ printfulVariantId: _printfulVariantId, priceCents: _priceCents, ...item }, index) => {
@@ -146,6 +158,7 @@ export async function POST(request: Request) {
       tax: fromMinorUnits(totals.taxCents, totals.currency),
       total: fromMinorUnits(totals.totalCents, totals.currency),
       currency: totals.currency,
+      printfulCostMinor,
       shippingAddress: {
         ...address,
         state: address.state ?? '',

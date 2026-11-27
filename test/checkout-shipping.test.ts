@@ -224,6 +224,8 @@ test('Stripe Tax calculates tax using the destination address and Printful shipp
     return Response.json({
       id: 'taxcalc_test',
       amount_total: 6363,
+      tax_amount_exclusive: 520,
+      tax_amount_inclusive: 0,
       currency: 'usd',
     })
   }
@@ -261,6 +263,46 @@ test('Stripe Tax calculates tax using the destination address and Printful shipp
     assert.equal(taxRequest?.get('line_items[0][quantity]'), '2')
     assert.equal(taxRequest?.get('shipping_cost[amount]'), '645')
     assert.equal(taxRequest?.get('line_items[0][tax_behavior]'), 'exclusive')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('Stripe Tax keeps tax-inclusive item and shipping prices at the listed total', async () => {
+  const originalFetch = globalThis.fetch
+  let taxRequest: URLSearchParams | undefined
+  globalThis.fetch = async (_input, init) => {
+    taxRequest = new URLSearchParams(String(init?.body))
+    return Response.json({
+      id: 'taxcalc_inclusive',
+      amount_total: 2500,
+      tax_amount_exclusive: 0,
+      tax_amount_inclusive: 250,
+      currency: 'eur',
+    })
+  }
+
+  try {
+    const address = parseCheckoutAddress({
+      name: 'Customer',
+      email: 'customer@example.com',
+      address1: '12 Example Street',
+      city: 'Rome',
+      country: 'IT',
+    })
+    assert.ok(address)
+    const calculation = await calculateStripeTax(
+      'stripe-test-key',
+      [{ variantId: 'listing-1', quantity: 1, priceCents: 2000, taxBehavior: 'inclusive' }],
+      address,
+      500,
+      'EUR',
+      'inclusive',
+    )
+    assert.equal(calculation.taxCents, 250)
+    assert.equal(calculation.totalCents, 2500)
+    assert.equal(taxRequest?.get('line_items[0][tax_behavior]'), 'inclusive')
+    assert.equal(taxRequest?.get('shipping_cost[tax_behavior]'), 'inclusive')
   } finally {
     globalThis.fetch = originalFetch
   }

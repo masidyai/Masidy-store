@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono, Fraunces } from 'next/font/google'
 import './globals.css'
 import { CartProvider } from '@/lib/cart-context'
+import { MarketplaceCartProvider } from '@/components/marketplace/cart-provider'
 import { Navbar } from '@/components/navbar'
 import { CartDrawer } from '@/components/cart/cart-drawer'
 import { Footer } from '@/components/footer'
@@ -102,11 +103,13 @@ export default function RootLayout({
       </head>
       <body className="font-sans antialiased overflow-x-hidden">
         <CartProvider>
-          <Navbar />
-          <main className="min-h-[60vh] w-full">{children}</main>
-          <Footer />
-          <CartDrawer />
-          <PWAInstallPrompt />
+          <MarketplaceCartProvider>
+            <Navbar />
+            <main className="min-h-[60vh] w-full">{children}</main>
+            <Footer />
+            <CartDrawer />
+            <PWAInstallPrompt />
+          </MarketplaceCartProvider>
         </CartProvider>
       </body>
     </html>

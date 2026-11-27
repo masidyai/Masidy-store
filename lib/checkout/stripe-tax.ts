@@ -1,10 +1,20 @@
-import type { CheckoutAddress, PricedCheckoutItem } from './printful'
+import type { CheckoutAddress } from './printful'
+
+export interface StripeTaxLineItem {
+  variantId: string
+  quantity: number
+  priceCents: number
+  taxCode?: string
+  taxBehavior?: 'exclusive' | 'inclusive'
+}
 
 export interface StripeTaxCalculation {
   id: string
   taxCents: number
   totalCents: number
   currency: string
+  taxAmountExclusiveCents: number
+  taxAmountInclusiveCents: number
 }
 
 export class StripeTaxError extends Error {
@@ -19,10 +29,11 @@ export class StripeTaxError extends Error {
 
 export async function calculateStripeTax(
   secretKey: string,
-  items: PricedCheckoutItem[],
+  items: StripeTaxLineItem[],
   address: CheckoutAddress,
   shippingCents: number,
   currency: string,
+  shippingTaxBehavior: 'exclusive' | 'inclusive' = 'exclusive',
 ): Promise<StripeTaxCalculation> {
   const params = new URLSearchParams()
   params.set('currency', currency.toLowerCase())
@@ -38,12 +49,13 @@ export async function calculateStripeTax(
     params.set(`line_items[${index}][amount]`, String(item.priceCents * item.quantity))
     params.set(`line_items[${index}][quantity]`, String(item.quantity))
     params.set(`line_items[${index}][reference]`, `${index}-${item.variantId}`)
-    params.set(`line_items[${index}][tax_behavior]`, 'exclusive')
+    params.set(`line_items[${index}][tax_behavior]`, item.taxBehavior ?? 'exclusive')
+    if (item.taxCode) params.set(`line_items[${index}][tax_code]`, item.taxCode)
   })
   if (shippingCents > 0) {
     params.set('shipping_cost[amount]', String(shippingCents))
     params.set('shipping_cost[tax_code]', 'txcd_92010001')
-    params.set('shipping_cost[tax_behavior]', 'exclusive')
+    params.set('shipping_cost[tax_behavior]', shippingTaxBehavior)
   }
 
   const response = await fetch('https://api.stripe.com/v1/tax/calculations', {
@@ -63,15 +75,18 @@ export async function calculateStripeTax(
     typeof payload.id !== 'string' ||
     typeof payload.amount_total !== 'number' ||
     !Number.isInteger(payload.amount_total) ||
+    typeof payload.tax_amount_exclusive !== 'number' ||
+    !Number.isInteger(payload.tax_amount_exclusive) ||
+    typeof payload.tax_amount_inclusive !== 'number' ||
+    !Number.isInteger(payload.tax_amount_inclusive) ||
     typeof payload.currency !== 'string' ||
     payload.currency.toUpperCase() !== currency.toUpperCase()
   ) {
     throw new StripeTaxError('Stripe returned an invalid tax calculation.', 502)
   }
 
-  const subtotalCents = items.reduce((sum, item) => sum + item.priceCents * item.quantity, 0)
-  const taxCents = payload.amount_total - subtotalCents - shippingCents
-  if (taxCents < 0) {
+  const taxCents = payload.tax_amount_exclusive + payload.tax_amount_inclusive
+  if (!Number.isSafeInteger(taxCents) || taxCents < 0) {
     throw new StripeTaxError('Stripe returned an invalid tax amount.', 502)
   }
 
@@ -80,6 +95,8 @@ export async function calculateStripeTax(
     taxCents,
     totalCents: payload.amount_total,
     currency: payload.currency.toUpperCase(),
+    taxAmountExclusiveCents: payload.tax_amount_exclusive,
+    taxAmountInclusiveCents: payload.tax_amount_inclusive,
   }
 }
 
@@ -88,6 +105,7 @@ export async function recordStripeTaxTransaction(
   calculationId: string,
   orderId: string,
   paymentIntentId: string,
+  idempotencyKey: string = paymentIntentId,
 ): Promise<void> {
   const params = new URLSearchParams()
   params.set('calculation', calculationId)
@@ -98,7 +116,7 @@ export async function recordStripeTaxTransaction(
     headers: {
       Authorization: `Bearer ${secretKey}`,
       'Content-Type': 'application/x-www-form-urlencoded',
-      'Idempotency-Key': `tax-transaction-${paymentIntentId}`,
+      'Idempotency-Key': `tax-transaction-${idempotencyKey}`,
     },
     body: params.toString(),
   })
