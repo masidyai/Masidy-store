@@ -47,6 +47,61 @@ export default async function HomePage() {
         </div>
       </section>
 
+      <section className="mx-auto w-full max-w-7xl px-4 md:px-6">
+        <div className="rounded-lg border border-border bg-secondary/20 p-5 sm:p-8 md:p-10">
+          <div className="max-w-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">Masidy Marketplace</p>
+            <h2 className="mt-2 font-serif text-2xl font-semibold sm:text-3xl">Make room for your next idea.</h2>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
+              Have products to sell, or an audience to share them with? Explore the seller and reseller programs and see the dashboards before you apply.
+            </p>
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <article className="rounded-lg border border-border bg-background p-5 sm:p-6">
+              <h3 className="text-lg font-semibold">Sell on Masidy</h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                Apply to list your products, manage submissions, and keep track of customer orders in one place.
+              </p>
+              <Link
+                href="/marketplace/demo/seller"
+                className="group mt-5 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-accent underline underline-offset-4"
+              >
+                Preview the seller dashboard
+                <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+              </Link>
+            </article>
+
+            <article className="rounded-lg border border-border bg-background p-5 sm:p-6">
+              <h3 className="text-lg font-semibold">Share products you love</h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                Share approved marketplace products and follow referral visits and sample earnings from your dashboard.
+              </p>
+              <Link
+                href="/marketplace/demo/reseller"
+                className="group mt-5 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-accent underline underline-offset-4"
+              >
+                Preview the reseller dashboard
+                <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+              </Link>
+            </article>
+          </div>
+
+          <div className="mt-5 flex flex-col gap-3 rounded-md border border-accent/20 bg-background/70 p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Dashboard previews use sample information only. Marketplace access is by application and requires approval.
+            </p>
+            <Link
+              href="/login?redirect=%2Faccount"
+              className="group inline-flex min-h-11 shrink-0 items-center gap-2 text-sm font-semibold text-accent underline underline-offset-4"
+            >
+              Sign in to apply
+              <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
       <ProductCarousel title="The full catalog" products={all} />
 
       {/* Closing CTA */}
