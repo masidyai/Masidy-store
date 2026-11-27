@@ -12,6 +12,10 @@ import {
   allocateProcessingFee,
   calculateResellerProfitShare,
 } from '@/lib/marketplace/profit-share'
+import {
+  getMarketplaceDisputeTransferError,
+  MARKETPLACE_DISPUTE_TRANSFER_ERRORS,
+} from '@/lib/marketplace/disputes'
 
 export async function POST(request: Request) {
   if (!env.STRIPE_WEBHOOK_SECRET) {
@@ -475,18 +479,6 @@ async function handleChargeDispute(eventType: string, dispute: any) {
 
   if (status === 'lost') {
     await sql`
-      UPDATE marketplace_seller_referral_attributions
-      SET status = CASE WHEN stripe_transfer_id IS NULL THEN 'canceled' ELSE status END,
-        transfer_error = CASE WHEN stripe_transfer_id IS NULL
-          THEN 'Dispute lost; payout blocked.'
-          ELSE 'Dispute lost after transfer; manual recovery review required.' END,
-        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-      WHERE marketplace_order_id IN (
-        SELECT id FROM marketplace_orders
-        WHERE stripe_charge_id = ${chargeId} OR payment_intent_id = ${paymentIntentId}
-      )
-    `
-    await sql`
       UPDATE marketplace_referral_attributions
         SET status = CASE WHEN stripe_transfer_id IS NULL THEN 'canceled' ELSE status END,
           transfer_error = CASE WHEN stripe_transfer_id IS NULL
@@ -500,39 +492,47 @@ async function handleChargeDispute(eventType: string, dispute: any) {
     `
   }
 
-  if (status === 'won') {
-    await sql`
-      UPDATE marketplace_seller_orders
-      SET transfer_error = NULL,
-        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-      WHERE marketplace_order_id IN (
-        SELECT id FROM marketplace_orders
-        WHERE stripe_charge_id = ${chargeId} OR payment_intent_id = ${paymentIntentId}
-      )
-        AND transfer_error = 'Open payment dispute; payout blocked pending resolution.'
-    `
-    await sql`
-      UPDATE marketplace_seller_referral_attributions
-      SET transfer_error = NULL,
-        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-      WHERE marketplace_order_id IN (
-        SELECT id FROM marketplace_orders
-        WHERE stripe_charge_id = ${chargeId} OR payment_intent_id = ${paymentIntentId}
-      )
-        AND transfer_error = 'Open payment dispute; payout blocked pending resolution.'
-    `
-  }
-
+  const pendingTransferError = getMarketplaceDisputeTransferError(status, false)
+  const completedTransferError = getMarketplaceDisputeTransferError(status, true)
   await sql`
     UPDATE marketplace_seller_orders
     SET transfer_error = CASE
-      WHEN ${status} = 'open' AND stripe_transfer_id IS NULL
-        THEN 'Open payment dispute; payout blocked pending resolution.'
-      WHEN ${status} = 'lost' AND stripe_transfer_id IS NULL
-        THEN 'Dispute lost; payout blocked.'
-      WHEN stripe_transfer_id IS NOT NULL
-        THEN 'Dispute requires manual transfer recovery review.'
-      ELSE transfer_error
+      WHEN ${status} = 'won' AND transfer_error IN (
+        ${MARKETPLACE_DISPUTE_TRANSFER_ERRORS.openBlocked},
+        ${MARKETPLACE_DISPUTE_TRANSFER_ERRORS.openTransferred},
+        ${MARKETPLACE_DISPUTE_TRANSFER_ERRORS.lostBlocked},
+        ${MARKETPLACE_DISPUTE_TRANSFER_ERRORS.lostTransferred}
+      ) THEN NULL
+      WHEN ${status} = 'won' THEN transfer_error
+      WHEN stripe_transfer_id IS NULL THEN ${pendingTransferError}
+      ELSE ${completedTransferError}
+    END,
+      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    WHERE marketplace_order_id IN (
+      SELECT id FROM marketplace_orders
+      WHERE stripe_charge_id = ${chargeId} OR payment_intent_id = ${paymentIntentId}
+    )
+  `
+  await sql`
+    UPDATE marketplace_seller_referral_attributions
+    SET status = CASE
+      WHEN ${status} = 'lost' AND stripe_transfer_id IS NULL THEN 'canceled'
+      WHEN ${status} = 'won'
+        AND status = 'canceled'
+        AND transfer_error = ${MARKETPLACE_DISPUTE_TRANSFER_ERRORS.lostBlocked}
+        THEN 'held'
+      ELSE status
+    END,
+      transfer_error = CASE
+      WHEN ${status} = 'won' AND transfer_error IN (
+        ${MARKETPLACE_DISPUTE_TRANSFER_ERRORS.openBlocked},
+        ${MARKETPLACE_DISPUTE_TRANSFER_ERRORS.openTransferred},
+        ${MARKETPLACE_DISPUTE_TRANSFER_ERRORS.lostBlocked},
+        ${MARKETPLACE_DISPUTE_TRANSFER_ERRORS.lostTransferred}
+      ) THEN NULL
+      WHEN ${status} = 'won' THEN transfer_error
+      WHEN stripe_transfer_id IS NULL THEN ${pendingTransferError}
+      ELSE ${completedTransferError}
     END,
       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
     WHERE marketplace_order_id IN (

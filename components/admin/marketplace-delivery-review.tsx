@@ -30,9 +30,25 @@ interface TransferFailure {
   transfer_status: string
 }
 
+interface RecoveryCase {
+  id: string
+  marketplace_order_id: string
+  payout_type: string
+  seller_name: string | null
+  seller_email: string
+  transfer_minor: number
+  currency: string
+  stripe_transfer_id: string
+  refunded_minor: number
+  order_currency: string
+  dispute_status: string
+  dispute_id: string | null
+}
+
 export function MarketplaceDeliveryReview() {
   const [deliveries, setDeliveries] = useState<Delivery[]>([])
   const [transferFailures, setTransferFailures] = useState<TransferFailure[]>([])
+  const [recoveryCases, setRecoveryCases] = useState<RecoveryCase[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
@@ -41,11 +57,18 @@ export function MarketplaceDeliveryReview() {
   async function load() {
     const response = await fetch('/api/admin/marketplace-orders')
     const result: unknown = await response.json()
-    if (!response.ok || !isRecord(result) || !Array.isArray(result.deliveries) || !Array.isArray(result.transferFailures)) {
+    if (
+      !response.ok ||
+      !isRecord(result) ||
+      !Array.isArray(result.deliveries) ||
+      !Array.isArray(result.transferFailures) ||
+      !Array.isArray(result.recoveryCases)
+    ) {
       throw new Error(getMessage(result, 'Could not load shipments awaiting verification.'))
     }
     setDeliveries(result.deliveries as Delivery[])
     setTransferFailures(result.transferFailures as TransferFailure[])
+    setRecoveryCases(result.recoveryCases as RecoveryCase[])
   }
 
   useEffect(() => {
@@ -107,9 +130,45 @@ export function MarketplaceDeliveryReview() {
           ))}
         </ul>
       )}
+        <div className="mt-8">
+          <h3 className="font-semibold">Transferred funds requiring review</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            These transfers are associated with a refund or payment dispute. Review the charge and transfer in Stripe and handle recovery manually. The transfer amount is context only; this screen does not move or reverse funds.
+          </p>
+          {recoveryCases.length === 0 ? (
+            <p className="mt-3 rounded-md border border-border p-4 text-sm text-muted-foreground">No transferred funds currently need refund or dispute review.</p>
+          ) : (
+            <ul className="mt-3 space-y-3">
+              {recoveryCases.map((recoveryCase) => (
+                <li key={recoveryCase.id} className="rounded-lg border border-destructive/30 p-4">
+                  <p className="font-medium">{recoveryCase.payout_type} · {recoveryCase.seller_name || recoveryCase.seller_email} · {recoveryCase.seller_email}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Marketplace order <code className="break-all">{recoveryCase.marketplace_order_id}</code>
+                    {' · '}Stripe transfer <code className="break-all">{recoveryCase.stripe_transfer_id}</code>
+                  </p>
+                  <p className="mt-2 text-sm">
+                    Transferred amount: {formatPrice(fromMinorUnits(recoveryCase.transfer_minor, recoveryCase.currency), recoveryCase.currency)}
+                  </p>
+                  {recoveryCase.refunded_minor > 0 && (
+                    <p className="mt-1 text-sm text-destructive">
+                      Refund recorded: {formatPrice(fromMinorUnits(recoveryCase.refunded_minor, recoveryCase.order_currency), recoveryCase.order_currency)}
+                    </p>
+                  )}
+                  {recoveryCase.dispute_status !== 'none' && (
+                    <p className="mt-1 text-sm text-destructive">
+                      Dispute {recoveryCase.dispute_status}
+                      {recoveryCase.dispute_id && <> · Stripe dispute <code className="break-all">{recoveryCase.dispute_id}</code></>}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
         {transferFailures.length > 0 && (
           <div className="mt-8">
-            <h3 className="font-semibold">Seller transfers needing attention</h3>
+            <h3 className="font-semibold">Payouts blocked or awaiting retry</h3>
             <ul className="mt-3 space-y-3">
               {transferFailures.map((failure) => (
                 <li key={failure.id} className="rounded-lg border border-destructive/30 p-4">
@@ -118,9 +177,7 @@ export function MarketplaceDeliveryReview() {
                   <p className="mt-1 text-xs text-muted-foreground">
                     {formatPrice(fromMinorUnits(failure.transfer_minor, failure.currency), failure.currency)}
                     {failure.delivered_at ? ` · verified ${new Date(failure.delivered_at).toLocaleDateString()}` : ''}
-                    {failure.transfer_status === 'transferred'
-                      ? ' · already transferred; manual recovery required'
-                      : ' · payout blocked or awaiting retry'}
+                    {' · payout not transferred'}
                   </p>
                 </li>
               ))}

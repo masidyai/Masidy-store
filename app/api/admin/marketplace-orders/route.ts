@@ -28,6 +28,22 @@ interface TransferFailureRow {
   transfer_status: string
 }
 
+interface MarketplaceRecoveryCaseRow {
+  id: string
+  marketplace_order_id: string
+  payout_type: string
+  seller_name: string | null
+  seller_email: string
+  transfer_minor: number
+  currency: string
+  stripe_transfer_id: string
+  refunded_minor: number
+  order_currency: string
+  dispute_status: string
+  dispute_id: string | null
+  updated_at: string
+}
+
 export async function GET() {
   const user = await getCurrentUser()
   if (!user?.isAdmin) return NextResponse.json({ message: 'Forbidden.' }, { status: 403 })
@@ -49,7 +65,7 @@ export async function GET() {
       so.transfer_error, so.delivered_at, so.transfer_status
     FROM marketplace_seller_orders so
     JOIN users u ON u.id = so.seller_user_id
-    WHERE so.transfer_error IS NOT NULL
+    WHERE so.transfer_error IS NOT NULL AND so.stripe_transfer_id IS NULL
     UNION ALL
     SELECT 'reseller:' || ra.id AS id, 'Reseller' AS payout_type,
       u.name AS seller_name, u.email AS seller_email, ra.amount_minor AS transfer_minor,
@@ -57,11 +73,40 @@ export async function GET() {
     FROM marketplace_seller_referral_attributions ra
     JOIN users u ON u.id = ra.reseller_user_id
     JOIN marketplace_seller_orders so ON so.id = ra.seller_order_id
-    WHERE ra.transfer_error IS NOT NULL
+    WHERE ra.transfer_error IS NOT NULL AND ra.stripe_transfer_id IS NULL
     ORDER BY delivered_at DESC
     LIMIT 100
   `
-  return NextResponse.json({ deliveries: result.rows, transferFailures: transferFailures.rows })
+  const recoveryCases = await sql<MarketplaceRecoveryCaseRow>`
+    SELECT * FROM (
+      SELECT 'seller:' || so.id AS id, mo.id AS marketplace_order_id, 'Seller' AS payout_type,
+        u.name AS seller_name, u.email AS seller_email, so.transfer_minor,
+        so.currency, so.stripe_transfer_id, mo.refunded_minor,
+        mo.currency AS order_currency, mo.dispute_status, mo.dispute_id, mo.updated_at AS updated_at
+      FROM marketplace_seller_orders so
+      JOIN marketplace_orders mo ON mo.id = so.marketplace_order_id
+      JOIN users u ON u.id = so.seller_user_id
+      WHERE so.stripe_transfer_id IS NOT NULL
+        AND (mo.refunded_minor > 0 OR mo.dispute_status IN ('open', 'lost'))
+      UNION ALL
+      SELECT 'reseller:' || ra.id AS id, mo.id AS marketplace_order_id, 'Reseller' AS payout_type,
+        u.name AS seller_name, u.email AS seller_email, ra.amount_minor AS transfer_minor,
+        ra.currency, ra.stripe_transfer_id, mo.refunded_minor,
+        mo.currency AS order_currency, mo.dispute_status, mo.dispute_id, mo.updated_at AS updated_at
+      FROM marketplace_seller_referral_attributions ra
+      JOIN marketplace_orders mo ON mo.id = ra.marketplace_order_id
+      JOIN users u ON u.id = ra.reseller_user_id
+      WHERE ra.stripe_transfer_id IS NOT NULL
+        AND (mo.refunded_minor > 0 OR mo.dispute_status IN ('open', 'lost'))
+    ) AS recovery_cases
+    ORDER BY recovery_cases.updated_at DESC
+    LIMIT 100
+  `
+  return NextResponse.json({
+    deliveries: result.rows,
+    transferFailures: transferFailures.rows,
+    recoveryCases: recoveryCases.rows,
+  })
 }
 
 export async function POST(request: Request) {
