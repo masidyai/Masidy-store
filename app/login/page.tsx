@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { getSafePostLoginRedirect } from '@/lib/auth/redirects'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -30,7 +31,8 @@ export default function LoginPage() {
       return
     }
 
-    router.push('/account')
+    const redirectTo = new URLSearchParams(window.location.search).get('redirect')
+    router.push(getSafePostLoginRedirect(redirectTo))
   }
 
   return (

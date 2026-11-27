@@ -140,13 +140,19 @@ export function MarketplacePrograms() {
                     </button>
                   </div>
                 )}
+                <Link
+                  href={`/marketplace/demo/${role}`}
+                  className="mt-4 inline-flex min-h-11 items-center rounded-md border border-border px-4 py-2 text-sm font-semibold hover:bg-secondary/40"
+                >
+                  Preview {role} dashboard
+                </Link>
               </article>
             )
           })}
         </div>
       )}
       <p className="mt-4 text-xs text-muted-foreground">
-        These are initial operating rules, not final legal terms. Earnings, checkout, and payouts remain disabled until Masidy configures program terms.
+        Live dashboard access requires an approved application. Previews use sample data only and never create listings, referrals, orders, or payments.
       </p>
     </section>
   )

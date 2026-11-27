@@ -25,6 +25,14 @@ export default async function MarketplacePage() {
         </Link>
       </div>
 
+      <div className="mt-6 flex flex-col gap-2 rounded-lg border border-border bg-secondary/20 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-muted-foreground">Thinking of selling or sharing products? Explore a sample dashboard.</p>
+        <div className="flex flex-wrap gap-3 text-sm font-semibold">
+          <Link href="/marketplace/demo/seller" className="text-accent underline underline-offset-4">Seller demo</Link>
+          <Link href="/marketplace/demo/reseller" className="text-accent underline underline-offset-4">Reseller demo</Link>
+        </div>
+      </div>
+
       {listings.length === 0 ? (
         <div className="mt-12 rounded-lg border border-border p-8 text-center">
           <h2 className="text-xl font-semibold">More products are on the way</h2>
